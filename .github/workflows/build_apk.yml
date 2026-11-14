@@ -1,0 +1,44 @@
+name: Build SOVRA VPN APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Download Xray Core Android Library (libv2ray.aar)
+        run: |
+          mkdir -p app/libs
+          curl -L -o app/libs/libv2ray.aar https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.11.9/libv2ray.aar
+          ls -la app/libs/
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build APK (Release / Assemble)
+        run: |
+          chmod +x gradlew || gradle wrapper
+          ./gradlew assembleRelease --stacktrace || ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovra-vpn-apk
+          path: app/build/outputs/apk/*/*/*.apk
