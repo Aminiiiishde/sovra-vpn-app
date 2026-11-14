@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">SOVRA VPN</string>
+    <string name="connect">اتصال</string>
+    <string name="disconnect">قطع اتصال</string>
+    <string name="connecting">در حال اتصال...</string>
+    <string name="connected">متصل شد</string>
+</resources>
