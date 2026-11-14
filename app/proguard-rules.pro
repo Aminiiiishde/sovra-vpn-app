@@ -1,0 +1,3 @@
+-keep class libv2ray.** { *; }
+-dontwarn libv2ray.**
+-keep class com.sovra.vpn.core.** { *; }
