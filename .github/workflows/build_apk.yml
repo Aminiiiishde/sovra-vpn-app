@@ -20,11 +20,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Download Xray Core Android Library (libv2ray.aar)
+      - name: Setup Assets & Xray Libraries
         run: |
           mkdir -p app/libs
           curl -L -o app/libs/libv2ray.aar https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.11.9/libv2ray.aar
+          mkdir -p app/src/main/assets
+          curl -L -o app/src/main/assets/three.min.js https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
           ls -la app/libs/
+          ls -la app/src/main/assets/
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
