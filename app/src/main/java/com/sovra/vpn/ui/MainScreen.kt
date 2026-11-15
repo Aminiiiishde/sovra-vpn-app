@@ -54,7 +54,6 @@ fun MainScreen(
     val context = LocalContext.current
     var showServerSheet by remember { mutableStateOf(false) }
 
-    // Pulsing and 3D floating animation for the shield
     val infiniteTransition = rememberInfiniteTransition(label = "shieldAnim")
     val floatOffset by infiniteTransition.animateFloat(
         initialValue = -6f,
@@ -158,7 +157,6 @@ fun MainScreen(
                     onConnectToggle()
                 }
         ) {
-            // Neon Glow Rings behind shield
             if (isConnected && !batterySaver) {
                 Box(
                     modifier = Modifier
@@ -172,7 +170,6 @@ fun MainScreen(
                 )
             }
 
-            // Outer Shield Glow Border
             Box(
                 modifier = Modifier
                     .size(210.dp)
@@ -188,7 +185,6 @@ fun MainScreen(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                // Official Metallic Shield Image with S Logo
                 Image(
                     painter = painterResource(id = R.drawable.sovra_logo),
                     contentDescription = "SOVRA Shield",
@@ -208,7 +204,7 @@ fun MainScreen(
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Row(horizontalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
                         .size(8.dp)
@@ -259,7 +255,7 @@ fun MainScreen(
             }
         }
 
-        // 5. Active Server Selector Card (Clickable to open 53 servers sheet)
+        // 5. Active Server Selector Card
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -293,7 +289,7 @@ fun MainScreen(
             }
         }
 
-        // 6. Connect / Disconnect Big Glowing Button
+        // 6. Connect / Disconnect Button
         Button(
             onClick = {
                 triggerHaptic()
@@ -322,7 +318,6 @@ fun MainScreen(
         }
     }
 
-    // Server Selection Modal BottomSheet
     if (showServerSheet) {
         ModalBottomSheet(
             onDismissRequest = { showServerSheet = false },
