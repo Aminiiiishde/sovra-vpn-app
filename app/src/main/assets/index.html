@@ -94,6 +94,7 @@ window.SovraNative = {
 </header>
 <main>
 
+<main class="main-content">
 <section class="sc on" data-s="0">
  <div class="stage"><canvas id="gl" aria-label="سپر سه‌بعدی SOVRA، با کشیدن انگشت بچرخان"></canvas><div class="fb" id="fb"></div></div>
  <div class="state"><b class="neon" id="stt">متصل نیستی</b><div class="mu" id="sub">سپر رو بکش و بچرخون، با دکمه وصل شو</div></div>
@@ -113,17 +114,35 @@ window.SovraNative = {
 </section>
 
 <section class="sc" data-s="2">
- <h3>خرید و تمدید پلن</h3>
- <div class="rw" style="gap:8px;margin-bottom:12px">
-  <button id="tab-vip" class="conn" style="flex:1;padding:8px 0;font-size:13px;border-radius:12px;background:linear-gradient(90deg,var(--c1),var(--c2))">پلن VIP (تانل پایدار)</button>
-  <button id="tab-eco" class="ibtn" style="flex:1;padding:8px 0;font-size:13px;border-radius:12px;width:auto">پلن اقتصادی (مستقیم)</button>
+ <div class="rw" style="justify-content:space-between">
+  <h3 style="margin:0">خرید و تمدید پلن</h3>
+  <span class="tag" id="plan-tag" style="background:rgba(236,72,153,.2);color:#f472b6;border-color:rgba(236,72,153,.4)">💎 تانل VIP</span>
+ </div>
+ <div class="rw" style="gap:8px;margin:8px 0 12px">
+  <button id="tab-vip" class="conn" style="flex:1;padding:9px 0;font-size:13px;border-radius:14px;background:linear-gradient(90deg,#ec4899,#8b5cf6)">💎 تانل VIP (فول پایداری)</button>
+  <button id="tab-eco" class="ibtn" style="flex:1;padding:9px 0;font-size:13px;border-radius:14px;width:auto">⚡️ اقتصادی (مستقیم)</button>
  </div>
 
- <div class="glass pop"><div class="rw"><span class="tag" style="background:rgba(123,92,255,.25);color:#CBBEFF;border-color:rgba(123,92,255,.5)">محبوب</span><b>۲۹۹,۰۰۰ ت</b></div><div style="font-weight:700;margin-top:6px">نامحدود - ۳ کاربره</div><div class="mu">تانل شده - ۳۰ روز</div></div>
- <div class="glass"><div class="rw"><b>حجمی</b><b id="pr" style="color:var(--c1)">۵۰,۰۰۰ ت</b></div><div class="rw" style="margin-top:8px"><input id="gb" type="range" min="5" max="200" step="5" value="10"><span id="gbo" class="mu" style="min-width:56px;text-align:left">10 GB</span></div></div>
- <div class="glass rw" style="border-style:dashed"><div><b>تست رایگان</b><div class="mu">۵۱۲ مگ - ۲۴ ساعت از اولین اتصال</div></div><span class="tag">رایگان</span></div>
- <div class="glass" style="text-align:center"><div class="mu">پرداخت کارت به کارت و آپلود عکس رسید</div></div>
- <button class="conn" style="margin-top:2px">ادامه به پرداخت</button>
+ <div id="unlimited-cards" style="display:flex;flex-direction:column;gap:8px"></div>
+
+ <div class="glass" style="margin-top:4px">
+  <div class="rw">
+   <div><b>پلن حجمی سفارشی</b><div class="mu" id="rate-hint" style="font-size:11px">نرخ هر گیگ: ۷,۰۰۰ ت</div></div>
+   <b id="pr" style="color:var(--c1);font-size:16px">۷۰,۰۰۰ ت</b>
+  </div>
+  <div class="rw" style="margin-top:8px">
+   <input id="gb" type="range" min="5" max="200" step="5" value="10">
+   <span id="gbo" class="mu" style="min-width:60px;text-align:left;font-weight:700">10 GB</span>
+  </div>
+ </div>
+
+ <div class="glass rw" style="border-style:dashed;margin-top:4px;cursor:pointer" onclick="activateFreeTrial()">
+  <div><b>🎁 دریافت تست رایگان ۲۴ ساعته</b><div class="mu">بدون نیاز به ثبت نام و آنی</div></div>
+  <span class="tag" style="background:rgba(16,185,129,.2);color:#10b981;border-color:rgba(16,185,129,.4)">فعال‌سازی</span>
+ </div>
+
+ <div class="glass" style="text-align:center;padding:10px"><div class="mu" style="font-size:12px">پرداخت کارت به کارت با تایید خودکار و اتصال فوری</div></div>
+ <button class="conn" id="btn-pay" style="margin-top:2px">ادامه به پرداخت</button>
 </section>
 
 <section class="sc" data-s="3">
@@ -135,6 +154,7 @@ window.SovraNative = {
  <div class="glass rw"><span>تم</span><span class="mu">تیره / روشن / خودکار</span></div>
 </section>
 
+</main>
 </main>
 <nav class="nav" id="nav">
  <button class="on" data-n="0"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"/></svg>خانه</button>
@@ -226,6 +246,119 @@ function loop(now){requestAnimationFrame(loop);if(document.hidden||!document.get
  renderer.render(scene,camera)}
 requestAnimationFrame(loop);
 })();
+
+/* ---------- Dynamic Plans & Dual Tiers ---------- */
+var PLANS_DATA = {
+  vip: {
+    rate: 7000,
+    tag: '💎 تانل VIP (پایداری ۱۰۰٪)',
+    tiers: [
+      { users: 1, price: 199000, label: '۱ کاربره', note: 'مخصوص ۱ کاربر - ۳۰ روزه' },
+      { users: 2, price: 259000, label: '۲ کاربره', note: '۲ کاربر همزمان - ۳۰ روزه' },
+      { users: 3, price: 389000, label: '۳ کاربره', popular: true, note: '۳ کاربر همزمان - بهترین انتخاب' },
+      { users: 4, price: 519000, label: '۴ کاربره', note: '۴ کاربره خانوادگی - ۳۰ روزه' }
+    ]
+  },
+  eco: {
+    rate: 4000,
+    tag: '⚡️ مستقیم اقتصادی (مقرون‌به‌صرفه)',
+    tiers: [
+      { users: 1, price: 99000, label: '۱ کاربره', note: 'اقتصادی پرسرعت - ۳۰ روزه' },
+      { users: 2, price: 179000, label: '۲ کاربره', note: '۲ کاربر همزمان - ۳۰ روزه' },
+      { users: 3, price: 259000, label: '۳ کاربره', popular: true, note: '۳ کاربر همزمان - محبوب اقتصادی' },
+      { users: 4, price: 319000, label: '۴ کاربره', note: '۴ کاربره ارزان - ۳۰ روزه' }
+    ]
+  }
+};
+var currentMode = 'vip';
+var selectedTier = 3;
+
+function renderPlans() {
+  var d = PLANS_DATA[currentMode];
+  document.getElementById('plan-tag').textContent = d.tag;
+  document.getElementById('rate-hint').textContent = 'نرخ هر گیگ: ' + d.rate.toLocaleString('fa-IR') + ' ت';
+  
+  var cardsHtml = '';
+  d.tiers.forEach(function(t) {
+    var isSel = (t.users === selectedTier);
+    var popBadge = t.popular ? '<span class="tag" style="background:rgba(123,92,255,.25);color:#CBBEFF;border-color:rgba(123,92,255,.5)">محبوب</span>' : '';
+    cardsHtml += '<div class="glass rw plan-tier' + (isSel ? ' sel pop' : '') + '" data-users="' + t.users + '" style="cursor:pointer;padding:10px 14px" onclick="selectPlanTier(' + t.users + ')">' +
+      '<div>' +
+        '<div style="font-weight:700">' + t.label + ' ' + popBadge + '</div>' +
+        '<div class="mu" style="font-size:11px">' + t.note + '</div>' +
+      '</div>' +
+      '<b style="font-size:15px;color:var(--c1)">' + t.price.toLocaleString('fa-IR') + ' ت</b>' +
+    '</div>';
+  });
+  document.getElementById('unlimited-cards').innerHTML = cardsHtml;
+  updateVolumePrice();
+}
+
+function selectPlanTier(u) {
+  selectedTier = u;
+  renderPlans();
+}
+
+function updateVolumePrice() {
+  var gbVal = +document.getElementById('gb').value;
+  var rate = PLANS_DATA[currentMode].rate;
+  var cost = gbVal * rate;
+  document.getElementById('gbo').textContent = gbVal + ' GB';
+  document.getElementById('pr').textContent = cost.toLocaleString('fa-IR') + ' ت';
+}
+
+document.getElementById('gb').oninput = updateVolumePrice;
+
+var tabVip = document.getElementById('tab-vip');
+var tabEco = document.getElementById('tab-eco');
+
+tabVip.onclick = function() {
+  currentMode = 'vip';
+  tabVip.className = 'conn';
+  tabVip.style.background = 'linear-gradient(90deg,#ec4899,#8b5cf6)';
+  tabEco.className = 'ibtn';
+  tabEco.style.background = 'transparent';
+  renderPlans();
+};
+
+tabEco.onclick = function() {
+  currentMode = 'eco';
+  tabEco.className = 'conn';
+  tabEco.style.background = 'linear-gradient(90deg,#06b6d4,#3b82f6)';
+  tabVip.className = 'ibtn';
+  tabVip.style.background = 'transparent';
+  renderPlans();
+};
+
+renderPlans();
+
+// Fetch live plans from API
+fetch('https://api.sovra.ir/v1/plans').then(function(r){ return r.json(); }).then(function(data){
+  if(data && data.vip && data.economic) {
+    PLANS_DATA.vip.rate = data.vip.price_per_gb || 7000;
+    PLANS_DATA.eco.rate = data.economic.price_per_gb || 4000;
+    if(data.vip.unlimited && data.vip.unlimited.length) {
+      PLANS_DATA.vip.tiers = data.vip.unlimited.map(function(x){
+        return { users: x.users, price: x.price, label: x.users + ' کاربره', popular: (x.users === 3), note: x.users + ' کاربر - ۳۰ روزه' };
+      });
+    }
+    if(data.economic.unlimited && data.economic.unlimited.length) {
+      PLANS_DATA.eco.tiers = data.economic.unlimited.map(function(x){
+        return { users: x.users, price: x.price, label: x.users + ' کاربره', popular: (x.users === 3), note: x.users + ' کاربر - ۳۰ روزه' };
+      });
+    }
+    renderPlans();
+  }
+}).catch(function(e){ console.log('Offline plans fallback active'); });
+
+function activateFreeTrial() {
+  if (window.AndroidBridge && window.AndroidBridge.startFreeTrial) {
+    window.AndroidBridge.startFreeTrial();
+  } else {
+    alert('در حال اتصال به سرور جهت دریافت تست رایگان...');
+  }
+}
+
 </script>
 </body>
 </html>
