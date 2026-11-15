@@ -2,8 +2,52 @@ package com.sovra.vpn.core
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLDecoder
 
 object ConfigGenerator {
+
+    fun generateFromUri(uri: String): String {
+        if (!uri.startsWith("vless://")) {
+            return generateXrayConfig(serverAddress = "77.90.52.130", serverPort = 2052, uuid = "0ded6ec5-3bff-4653-b404-a842765ccdcd")
+        }
+        return try {
+            val clean = uri.removePrefix("vless://").split("#")[0]
+            val parts = clean.split("@")
+            val uuid = parts[0]
+            val hostPortAndQuery = parts[1].split("?")
+            val hostPort = hostPortAndQuery[0].split(":")
+            val address = hostPort[0]
+            val port = hostPort[1].toInt()
+            val queryMap = mutableMapOf<String, String>()
+            if (hostPortAndQuery.size > 1) {
+                hostPortAndQuery[1].split("&").forEach { param ->
+                    val kv = param.split("=")
+                    if (kv.size == 2) queryMap[kv[0]] = URLDecoder.decode(kv[1], "UTF-8")
+                }
+            }
+            val type = queryMap["type"] ?: "ws"
+            val security = queryMap["security"] ?: "none"
+            val path = queryMap["path"] ?: ""
+            val host = queryMap["host"] ?: ""
+            val sni = queryMap["sni"] ?: host
+            val pbk = queryMap["pbk"] ?: ""
+            val sid = queryMap["sid"] ?: ""
+            generateXrayConfig(
+                serverAddress = address,
+                serverPort = port,
+                uuid = uuid,
+                transport = type,
+                path = path,
+                host = host,
+                security = security,
+                sni = sni,
+                publicKey = pbk,
+                shortId = sid
+            )
+        } catch (e: Exception) {
+            generateXrayConfig(serverAddress = "77.90.52.130", serverPort = 2052, uuid = "0ded6ec5-3bff-4653-b404-a842765ccdcd")
+        }
+    }
 
     fun generateXrayConfig(
         serverAddress: String,
@@ -62,7 +106,7 @@ object ConfigGenerator {
                 put("vnext", vnext)
             })
 
-            // StreamSettings (xhttp / reality)
+            // StreamSettings (xhttp / reality / ws)
             put("streamSettings", JSONObject().apply {
                 put("network", transport)
                 put("security", security)
@@ -81,6 +125,15 @@ object ConfigGenerator {
                         put("path", path)
                         put("host", host)
                         put("mode", "auto")
+                    })
+                }
+
+                if (transport == "ws") {
+                    put("wsSettings", JSONObject().apply {
+                        put("path", path)
+                        put("headers", JSONObject().apply {
+                            if (host.isNotEmpty()) put("Host", host)
+                        })
                     })
                 }
             })
