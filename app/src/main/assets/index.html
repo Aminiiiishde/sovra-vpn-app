@@ -8,7 +8,12 @@
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--c1:#27E1FF;--c2:#2F8CFF;--c3:#7B5CFF;--ok:#3DFFA8;--bad:#FF5C7A;--warn:#FFC95C}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *{box-sizing:border-box}
-body{margin:0;background:#03050C;font-family:"Vazirmatn",Tahoma,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#03050C;font-family:"Vazirmatn",Tahoma,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-tap-highlight-color:transparent;width:100vw;height:100vh;overflow:hidden;position:fixed;user-select:none;-webkit-user-select:none}
+.app{--bg:#050812;--tx:#EAF2FF;--mu:#8EA0BF;--card:rgba(14,22,46,.66);--line:rgba(70,140,255,.30);--glow:.55;
+ position:relative;width:100vw;height:100vh;max-width:100%;margin:0 auto;color:var(--tx);overflow-y:auto;overflow-x:hidden;
+ background:radial-gradient(520px 340px at 85% -5%,rgba(123,92,255,.30),transparent 70%),radial-gradient(520px 380px at 5% 28%,rgba(39,225,255,.18),transparent 70%),radial-gradient(600px 400px at 60% 100%,rgba(47,140,255,.22),transparent 70%),var(--bg);
+ padding-bottom:env(safe-area-inset-bottom, 20px)}
+
 .app{--bg:#050812;--tx:#EAF2FF;--mu:#8EA0BF;--card:rgba(14,22,46,.66);--line:rgba(70,140,255,.30);--glow:.55;
  position:relative;max-width:430px;min-height:100vh;margin:0 auto;color:var(--tx);overflow:hidden;
  background:radial-gradient(520px 340px at 85% -5%,rgba(123,92,255,.30),transparent 70%),radial-gradient(520px 380px at 5% 28%,rgba(39,225,255,.18),transparent 70%),radial-gradient(600px 400px at 60% 100%,rgba(47,140,255,.22),transparent 70%),var(--bg)}
@@ -108,7 +113,12 @@ window.SovraNative = {
 </section>
 
 <section class="sc" data-s="2">
- <h3>پلن‌ها</h3>
+ <h3>خرید و تمدید پلن</h3>
+ <div class="rw" style="gap:8px;margin-bottom:12px">
+  <button id="tab-vip" class="conn" style="flex:1;padding:8px 0;font-size:13px;border-radius:12px;background:linear-gradient(90deg,var(--c1),var(--c2))">پلن VIP (تانل پایدار)</button>
+  <button id="tab-eco" class="ibtn" style="flex:1;padding:8px 0;font-size:13px;border-radius:12px;width:auto">پلن اقتصادی (مستقیم)</button>
+ </div>
+
  <div class="glass pop"><div class="rw"><span class="tag" style="background:rgba(123,92,255,.25);color:#CBBEFF;border-color:rgba(123,92,255,.5)">محبوب</span><b>۲۹۹,۰۰۰ ت</b></div><div style="font-weight:700;margin-top:6px">نامحدود - ۳ کاربره</div><div class="mu">تانل شده - ۳۰ روز</div></div>
  <div class="glass"><div class="rw"><b>حجمی</b><b id="pr" style="color:var(--c1)">۵۰,۰۰۰ ت</b></div><div class="rw" style="margin-top:8px"><input id="gb" type="range" min="5" max="200" step="5" value="10"><span id="gbo" class="mu" style="min-width:56px;text-align:left">10 GB</span></div></div>
  <div class="glass rw" style="border-style:dashed"><div><b>تست رایگان</b><div class="mu">۵۱۲ مگ - ۲۴ ساعت از اولین اتصال</div></div><span class="tag">رایگان</span></div>
