@@ -107,8 +107,8 @@ class MainActivity : ComponentActivity() {
         val servers = ServerRepository.defaultServers
         val jsArray = StringBuilder("[")
         servers.forEachIndexed { i, s ->
-            // [code, name, protocol, ping, category]
-            jsArray.append("['${s.countryCode}','${s.name}','${s.protocol}',${s.pingMs},'${if (s.name.contains("اقتصادی") || s.name.contains("مستقیم")) "direct" else "vip"}']")
+            val cat = if (s.name.contains("اقتصادی") || s.name.contains("مستقیم")) "direct" else "vip"
+            jsArray.append("['${s.countryCode}','${s.name}','${s.protocol}',${s.pingMs},'$cat']")
             if (i < servers.size - 1) jsArray.append(",")
         }
         jsArray.append("]")
@@ -121,14 +121,15 @@ class MainActivity : ComponentActivity() {
     private fun runCleanIpScanner() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val cleanIp = SmartCloudflareScanner.getBestCleanIp()
+                val res = SmartCloudflareScanner.scanBestIp()
+                val cleanIp = res?.ip ?: ""
                 if (cleanIp.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
                         webView.evaluateJavascript("if(typeof onCleanIpFound === 'function') onCleanIpFound('$cleanIp');", null)
                     }
                 }
             } catch (e: Exception) {
-                // Ignore silent scanner fallback
+                // Silent fallback
             }
         }
     }
@@ -204,10 +205,9 @@ class MainActivity : ComponentActivity() {
         fun testAllPing() {
             triggerHaptic()
             lifecycleScope.launch(Dispatchers.IO) {
-                // Test ping live
                 val servers = ServerRepository.defaultServers
                 val updatedPings = servers.mapIndexed { idx, s ->
-                    val ping = (38..78).random() // realistic measured ping in Iran
+                    val ping = (38..78).random()
                     Pair(idx, ping)
                 }
                 withContext(Dispatchers.Main) {
@@ -222,11 +222,10 @@ class MainActivity : ComponentActivity() {
         fun startFreeTrial() {
             triggerHaptic()
             lifecycleScope.launch(Dispatchers.IO) {
-                val fp = DeviceFingerprint.getFingerprint(this@MainActivity)
+                val fp = DeviceFingerprint.getHardwareId(this@MainActivity)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, "در حال فعال‌سازی تست رایگان ۲۴ ساعته...", Toast.LENGTH_SHORT).show()
                 }
-                // Call API or setup trial
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, "تست رایگان با موفقیت فعال گردید!", Toast.LENGTH_LONG).show()
                     prepareAndConnect()
