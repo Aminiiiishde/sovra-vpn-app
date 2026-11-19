@@ -4,863 +4,746 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>SOVRA VPN</title>
+<!-- Three.js for 3D Shield (Offline Asset with CDN fallback) -->
+<script src="three.min.js"></script>
+<script>if(typeof THREE==="undefined"){document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>');}</script>
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;600;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,1,0&display=swap" rel="stylesheet">
 <style>
 :root{
-  box-sizing:border-box;
-  --c1:#27E1FF;
-  --c2:#2F8CFF;
-  --c3:#7B5CFF;
-  --vip:#ec4899;
-  --direct:#38bdf8;
-  --ok:#3DFFA8;
-  --bad:#FF5C7A;
-  --warn:#FFC95C;
-  --tx:#EAF2FF;
-  --mu:#8EA0BF;
-  --card:rgba(14,22,46,.72);
-  --line:rgba(70,140,255,.30);
-  --glow:.55;
+  --bg:#03050C;--surface:#10131c;--sf-low:#181b24;--sf-mid:#1c1f28;
+  --sf-high:#272a33;--sf-highest:#31353e;--sf-lowest:#0b0e16;
+  --c1:#27E1FF;--c2:#2F8CFF;--c3:#7B5CFF;--vip:#EC4899;
+  --direct:#38bdf8;--ok:#3DFFA8;--bad:#FF5C7A;--warn:#FFB800;
+  --tx:#e0e2ee;--tx2:#94A3B8;
+  --card:rgba(14,22,46,.72);--card2:rgba(20,32,66,.55);
+  --line:rgba(39,225,255,.22);--line2:rgba(39,225,255,.10);
 }
-*{box-sizing:border-box}
-html, body {
-  margin:0;
-  padding:0;
-  width:100vw;
-  height:100vh;
-  overflow:hidden;
-  position:fixed;
-  background:#03050C;
-  font-family:"Vazirmatn",Tahoma,system-ui,-apple-system,"Segoe UI",sans-serif;
-  -webkit-tap-highlight-color:transparent;
-  user-select:none;
-  -webkit-user-select:none;
-}
-.app{
-  position:fixed;
-  inset:0;
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-  color:var(--tx);
-  background:radial-gradient(520px 340px at 85% -5%,rgba(123,92,255,.28),transparent 70%),
-             radial-gradient(520px 380px at 5% 28%,rgba(39,225,255,.16),transparent 70%),
-             radial-gradient(600px 400px at 60% 100%,rgba(47,140,255,.22),transparent 70%),
-             #03050C;
-}
-
-/* Cyberpunk perspective floor */
-.floor{
-  position:absolute;
-  inset:auto 0 0 0;
-  height:240px;
-  opacity:.25;
-  pointer-events:none;
-  background-image:linear-gradient(var(--c2) 1px,transparent 1px),linear-gradient(90deg,var(--c2) 1px,transparent 1px);
-  background-size:36px 36px;
-  transform:perspective(280px) rotateX(60deg);
-  transform-origin:50% 100%;
-  mask-image:linear-gradient(to top,rgba(0,0,0,1),transparent);
-  -webkit-mask-image:linear-gradient(to top,rgba(0,0,0,1),transparent);
-}
-
-.top{
-  flex-shrink:0;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:12px 16px 8px;
-  z-index:20;
-}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;position:fixed;
+  background:var(--bg);font-family:"Vazirmatn","Space Grotesk",Tahoma,system-ui,sans-serif;
+  font-size:14px;color:var(--tx);user-select:none;-webkit-user-select:none;}
+.app{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;
+  background:radial-gradient(ellipse 520px 340px at 85% -5%,rgba(123,92,255,.28),transparent 70%),
+    radial-gradient(ellipse 520px 380px at 5% 28%,rgba(39,225,255,.16),transparent 70%),
+    radial-gradient(ellipse 600px 400px at 60% 100%,rgba(47,140,255,.22),transparent 70%),
+    var(--bg);}
+.floor{position:absolute;inset:auto 0 0 0;height:220px;opacity:.18;pointer-events:none;
+  background-image:linear-gradient(to right,rgba(39,225,255,.2) 1px,transparent 1px),
+    linear-gradient(to bottom,rgba(39,225,255,.2) 1px,transparent 1px);
+  background-size:28px 28px;transform:perspective(180px) rotateX(60deg);transform-origin:bottom center;}
+/* TOP */
+.top{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px 8px;z-index:30;background:rgba(16,19,28,.75);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--line2);}
 .brand{display:flex;align-items:center;gap:10px}
-.brand svg{width:28px;height:28px;filter:drop-shadow(0 0 8px var(--c1))}
-.brand b{font-size:18px;letter-spacing:1px;color:var(--tx);font-weight:900}
-.brand b span{color:var(--c1)}
-.ibtn{
-  width:36px;
-  height:36px;
-  border-radius:12px;
-  border:1px solid var(--line);
-  background:rgba(20,32,64,.55);
-  color:var(--tx);
-  display:grid;
-  place-items:center;
-  cursor:pointer;
-  backdrop-filter:blur(8px);
-  -webkit-backdrop-filter:blur(8px);
-}
-.ibtn svg,.nav svg{width:20px;height:20px;fill:currentColor}
-
-/* Main scrollable section container */
-.sc{
-  display:none;
-  flex-direction:column;
-  gap:12px;
-  flex:1;
-  overflow-y:auto;
-  -webkit-overflow-scrolling:touch;
-  touch-action:pan-y;
-  padding:8px 16px 110px;
-}
+.brand-icon{width:36px;height:36px;border-radius:12px;background:var(--sf-high);
+  display:grid;place-items:center;box-shadow:0 0 14px rgba(39,225,255,.25);}
+.brand-txt b{font-size:17px;font-weight:900;letter-spacing:.5px;display:block}
+.brand-txt small{font-size:10px;color:var(--c1);letter-spacing:.5px;text-transform:uppercase;line-height:1.2}
+.top-actions{display:flex;align-items:center;gap:8px}
+.ibtn{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;
+  background:transparent;border:none;color:var(--tx2);cursor:pointer;position:relative;}
+.notif-dot{position:absolute;top:9px;left:9px;width:8px;height:8px;border-radius:50%;
+  background:var(--c1);box-shadow:0 0 6px var(--c1);}
+.avatar{width:32px;height:32px;border-radius:50%;
+  background:linear-gradient(135deg,var(--c1),var(--c3));
+  display:grid;place-items:center;font-size:13px;font-weight:800;color:#02131C;
+  box-shadow:0 0 8px rgba(39,225,255,.3);}
+#st-badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid;
+  background:rgba(255,92,122,.15);color:var(--bad);border-color:rgba(255,92,122,.4);transition:all .3s;}
+#st-badge.ok{background:rgba(61,255,168,.15);color:var(--ok);border-color:rgba(61,255,168,.4)}
+#st-badge.conn-ing{background:rgba(39,225,255,.15);color:var(--c1);border-color:rgba(39,225,255,.4)}
+/* SECTIONS */
+.sc{display:none;flex-direction:column;gap:12px;flex:1;overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;touch-action:pan-y;padding:12px 16px 90px;}
 .sc.on{display:flex}
-
-/* Section 0 (Home) stays cleanly non-scrollable */
-.sc[data-s="0"]{
-  overflow:hidden;
-  justify-content:space-between;
-  padding-bottom:78px;
-}
-
-.glass{
-  background:var(--card);
-  border:1px solid var(--line);
-  border-radius:18px;
-  padding:12px 14px;
-  backdrop-filter:blur(14px);
-  -webkit-backdrop-filter:blur(14px);
-  box-shadow:0 0 0 1px rgba(255,255,255,.03) inset,0 8px 30px rgba(0,0,0,.3);
-}
+.sc[data-s="0"]{overflow:hidden;padding:0 16px 78px;justify-content:space-between;gap:10px;}
+/* GLASS */
+.glass{background:var(--card);border:1px solid var(--line2);border-radius:18px;padding:14px 16px;
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  box-shadow:0 0 0 1px rgba(255,255,255,.03) inset,0 8px 30px rgba(0,0,0,.35);}
 .rw{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.mu{color:var(--mu);font-size:12px}
-.tag{
-  font-size:11px;
-  padding:3px 8px;
-  border-radius:8px;
-  border:1px solid var(--line);
-  color:var(--c1);
-  background:rgba(39,225,255,.08);
-}
-.tag.vip{background:rgba(236,72,153,.15);color:#f472b6;border-color:rgba(236,72,153,.35)}
-.tag.direct{background:rgba(56,189,248,.15);color:#38bdf8;border-color:rgba(56,189,248,.35)}
-.tag.ok{background:rgba(61,255,168,.15);color:var(--ok);border-color:rgba(61,255,168,.35)}
-
-.stage{
-  position:relative;
-  width:100%;
-  flex:1;
-  min-height:200px;
-  max-height:300px;
-  display:grid;
-  place-items:center;
-}
+.mu{color:var(--tx2);font-size:12px}
+/* CHIPS */
+.chip{font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;border:1px solid var(--line);
+  color:var(--c1);background:rgba(39,225,255,.08);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
+.chip.vip{background:rgba(236,72,153,.15);color:#f472b6;border-color:rgba(236,72,153,.35)}
+.chip.direct{background:rgba(56,189,248,.15);color:#38bdf8;border-color:rgba(56,189,248,.35)}
+.chip.ok{background:rgba(61,255,168,.15);color:var(--ok);border-color:rgba(61,255,168,.35)}
+.chip.bad{background:rgba(255,92,122,.15);color:var(--bad);border-color:rgba(255,92,122,.35)}
+/* STAGE - 3D SHIELD */
+.stage{position:relative;width:100%;flex:1;min-height:195px;max-height:275px;display:grid;place-items:center;margin-top:4px;}
 .stage canvas{width:100%;height:100%;display:block;touch-action:pan-y;cursor:grab}
-.fb{
-  display:none;
-  position:absolute;
-  inset:0;
-  margin:auto;
-  width:140px;
-  height:170px;
-  filter:drop-shadow(0 0 25px rgba(39,225,255,.65));
-}
+.fb{display:none;position:absolute;inset:0;margin:auto;width:140px;height:170px;
+  filter:drop-shadow(0 0 25px rgba(39,225,255,.65));}
 .fb svg{width:100%;height:100%}
-
-.conn{
-  width:100%;
-  padding:15px 0;
-  border-radius:20px;
-  border:none;
-  font-weight:800;
-  font-size:16px;
-  color:#02131C;
-  cursor:pointer;
-  background:linear-gradient(90deg,var(--c1),var(--c2));
-  box-shadow:0 0 25px rgba(39,225,255,.45);
-  transition:transform .12s,filter .2s;
-}
-.conn:active{transform:scale(.98)}
-.conn.on{background:linear-gradient(90deg,var(--ok),#1FD38A);box-shadow:0 0 25px rgba(61,255,168,.45)}
-
-.btn2{
-  background:rgba(30,48,88,.6);
-  color:var(--tx);
-  border:1px solid var(--line);
-  border-radius:12px;
-  padding:6px 12px;
-  cursor:pointer;
-  font-size:12px;
-}
-.btn2.on{
-  background:var(--c1);
-  color:#02131C;
-  font-weight:700;
-  border-color:var(--c1);
-  box-shadow:0 0 12px rgba(39,225,255,.4);
-}
-
-.flag{
-  width:36px;
-  height:36px;
-  border-radius:10px;
-  background:rgba(20,32,64,.6);
-  border:1px solid var(--line);
-  display:grid;
-  place-items:center;
-  font-size:18px;
-  flex-shrink:0;
-}
-.bars{display:flex;align-items:flex-end;gap:2px;height:16px}
+/* STATUS PILL */
+.status-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:999px;
+  background:var(--sf-mid);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  font-size:15px;font-weight:700;box-shadow:0 2px 12px rgba(0,0,0,.3);}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--bad);transition:background .3s;}
+.status-dot.ok{background:var(--ok)}
+.status-dot.conn{background:var(--c1);animation:ping .9s infinite}
+@keyframes ping{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.4)}}
+#statusStateLabel{color:var(--bad);transition:color .3s}
+#statusStateLabel.ok{color:var(--ok)}
+#statusStateLabel.conn{color:var(--c1)}
+.info-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:6px}
+.info-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:10px;
+  background:var(--sf-low);color:var(--tx2);font-size:12px;}
+/* CONNECT BTN */
+.conn-wrap{width:100%;position:relative;border-radius:999px;padding:2px}
+.conn-border{position:absolute;inset:0;border-radius:999px;
+  background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3));
+  animation:borderPulse 2.5s ease-in-out infinite;}
+@keyframes borderPulse{0%,100%{opacity:.7}50%{opacity:1}}
+.conn-btn{position:relative;width:100%;padding:16px 24px;border-radius:999px;border:none;cursor:pointer;
+  background:rgba(11,14,22,.9);backdrop-filter:blur(16px);
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  font-family:inherit;font-size:16px;font-weight:900;color:var(--c1);letter-spacing:.3px;
+  transition:transform .12s,background .3s;box-shadow:0 0 28px rgba(39,225,255,.3);}
+.conn-btn:active{transform:scale(.98)}
+.conn-btn .chevron{font-size:20px;color:rgba(39,225,255,.6);transition:transform .3s}
+.conn-btn:hover .chevron{transform:translateX(-3px)}
+.conn-btn.connected{background:rgba(2,20,10,.9);box-shadow:0 0 28px rgba(61,255,168,.3)}
+.conn-btn.connected,.conn-btn.connected .ms-btn{color:var(--ok)}
+.conn-btn.connecting{background:rgba(5,15,30,.9)}
+/* SERVER HOME */
+.flag-wrap{position:relative;flex-shrink:0;width:48px;height:48px;border-radius:14px;
+  background:var(--sf-high);display:grid;place-items:center;font-size:24px;
+  box-shadow:0 0 16px rgba(39,225,255,.2);}
+.vip-badge{position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;
+  background:var(--c1);display:grid;place-items:center;font-size:9px;font-weight:900;color:#001f25;}
+.srv-info{flex:1;min-width:0;text-align:right}
+.srv-info b{font-size:15px;font-weight:700;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srv-meta{display:flex;align-items:center;gap:6px;margin-top:3px}
+.ping-dot{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--c1);}
+.ping-dot::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--c1);display:block;animation:ping .9s infinite}
+.change-btn{flex-shrink:0;padding:7px 12px;border-radius:12px;background:var(--sf-high);border:none;
+  color:var(--c1);font-size:12px;font-family:inherit;cursor:pointer;display:flex;align-items:center;gap:4px;}
+.speed-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.speed-card{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(11,14,22,.6);}
+.speed-icon{width:36px;height:36px;border-radius:10px;background:var(--sf-high);display:grid;place-items:center;flex-shrink:0;}
+.speed-label{font-size:11px;color:var(--tx2);display:block;text-align:right}
+.speed-val{font-size:16px;font-weight:800;display:block;text-align:right;font-variant-numeric:tabular-nums}
+.sec-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sec-card{display:flex;flex-direction:column;align-items:center;text-align:center;padding:10px 6px;
+  border-radius:14px;background:rgba(24,27,36,.7);backdrop-filter:blur(8px);}
+.sec-card b{font-size:11px;font-weight:600;display:block;margin-top:4px}
+.sec-card small{font-size:10px;color:var(--tx2)}
+/* SERVERS */
+.tab-filter{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.tab-filter::-webkit-scrollbar{display:none}
+.f-btn{padding:7px 14px;border-radius:999px;border:1px solid var(--line2);background:transparent;
+  color:var(--tx2);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;
+  transition:all .2s;flex-shrink:0;}
+.f-btn.on{background:rgba(39,225,255,.15);color:var(--c1);border-color:rgba(39,225,255,.4);
+  box-shadow:0 0 10px rgba(39,225,255,.2);}
+.auto-card{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:18px;
+  background:rgba(39,225,255,.06);border:1.5px solid rgba(39,225,255,.35);
+  box-shadow:0 0 20px rgba(39,225,255,.12),inset 0 0 12px rgba(39,225,255,.05);
+  cursor:pointer;transition:all .2s;}
+.auto-card.sel{border-color:var(--c1);box-shadow:0 0 25px rgba(39,225,255,.3),inset 0 0 16px rgba(39,225,255,.08);}
+.server-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;
+  background:var(--card);border:1px solid var(--line2);cursor:pointer;transition:all .2s;
+  backdrop-filter:blur(10px);}
+.server-item.sel{border-color:var(--c1);background:rgba(39,225,255,.08);box-shadow:0 0 16px rgba(39,225,255,.2);}
+.server-item.vip-srv{border-color:rgba(236,72,153,.3)}
+.server-item.vip-srv.sel{border-color:var(--vip);box-shadow:0 0 16px rgba(236,72,153,.2)}
+.srv-name{flex:1;min-width:0}
+.srv-name b{font-size:14px;font-weight:700;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srv-name small{font-size:11px;color:var(--tx2)}
+.bars{display:flex;align-items:flex-end;gap:2px;height:16px;flex-shrink:0}
 .bars i{width:3px;border-radius:2px;display:block}
-
-/* Plan Tier Card */
-.plan-tier{
-  border:1px solid var(--line);
-  transition:border-color .2s,box-shadow .2s;
-}
-.plan-tier.sel{
-  border-color:var(--c1);
-  background:rgba(39,225,255,.08);
-  box-shadow:0 0 16px rgba(39,225,255,.2);
-}
-
-/* Bottom Navigation */
-.nav{
-  position:fixed;
-  bottom:0;
-  left:0;
-  right:0;
-  height:68px;
-  z-index:100;
-  display:flex;
-  justify-content:space-around;
-  align-items:center;
-  background:rgba(6,10,24,.92);
-  backdrop-filter:blur(18px);
-  -webkit-backdrop-filter:blur(18px);
-  border-top:1px solid var(--line);
-  padding:0 8px;
-  padding-bottom:env(safe-area-inset-bottom,0px);
-}
-.nav button{
-  background:transparent;
-  border:none;
-  color:var(--mu);
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:4px;
-  font-size:11px;
-  padding:6px 14px;
-  border-radius:14px;
-  cursor:pointer;
-}
-.nav button.on{
-  color:var(--c1);
-  background:rgba(39,225,255,.12);
-  text-shadow:0 0 10px rgba(39,225,255,.7);
-}
-
-/* Custom Scrollbar for touch */
-.sc::-webkit-scrollbar{width:4px}
-.sc::-webkit-scrollbar-thumb{background:rgba(70,140,255,.3);border-radius:4px}
+.sel-btn{padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;
+  color:var(--tx2);font-family:inherit;font-size:11px;cursor:pointer;flex-shrink:0;white-space:nowrap;transition:all .2s;}
+.sel-btn.on{background:var(--c1);color:#001f25;border-color:var(--c1);font-weight:700}
+.test-all-btn{width:100%;padding:13px;border-radius:16px;border:1px solid var(--line);
+  background:var(--sf-low);color:var(--tx2);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;}
+.skeleton{background:linear-gradient(90deg,var(--sf-mid) 25%,var(--sf-high) 50%,var(--sf-mid) 75%);
+  background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:14px;height:70px;margin-bottom:8px;}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* PLANS */
+.plan-switcher{display:flex;gap:8px;margin-bottom:4px}
+.plan-tab{flex:1;padding:11px 8px;border-radius:14px;border:1px solid var(--line2);background:transparent;
+  color:var(--tx2);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:all .25s;
+  display:flex;align-items:center;justify-content:center;gap:5px;}
+.plan-tab.on{background:rgba(39,225,255,.15);color:var(--c1);border-color:rgba(39,225,255,.4);box-shadow:0 0 14px rgba(39,225,255,.2);}
+.plan-tab.vip-tab.on{background:rgba(236,72,153,.12);color:#f472b6;border-color:rgba(236,72,153,.4);box-shadow:0 0 14px rgba(236,72,153,.2);}
+.unlimited-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tier-card{padding:14px 12px;border-radius:16px;background:var(--sf-low);border:1.5px solid var(--line2);
+  text-align:center;cursor:pointer;transition:all .2s;}
+.tier-card.sel{border-color:var(--c1);background:rgba(39,225,255,.08);box-shadow:0 0 14px rgba(39,225,255,.2);}
+.tier-card b{font-size:14px;font-weight:800;display:block;margin-top:4px}
+.tier-card .price{font-size:17px;font-weight:900;color:var(--c1);margin:4px 0}
+.tier-card small{font-size:11px;color:var(--tx2)}
+.tier-buy{display:block;width:100%;margin-top:8px;padding:7px;border-radius:999px;border:none;
+  background:linear-gradient(90deg,var(--c1),var(--c2));color:#001f25;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;}
+.vol-box{padding:16px;border-radius:18px;background:var(--card);border:1px solid var(--line2)}
+.vol-row{display:flex;align-items:center;gap:10px;margin-top:12px}
+.vol-row input[type=range]{flex:1;cursor:pointer;accent-color:var(--c1)}
+.vol-num{width:70px;padding:7px 10px;font-size:15px;font-weight:800;color:var(--c1);
+  background:rgba(20,31,54,.85);border:1px solid var(--line);border-radius:10px;text-align:center;font-family:inherit;}
+.vol-num:focus{outline:none;border-color:var(--c1);box-shadow:0 0 8px rgba(39,225,255,.35)}
+.price-display{font-size:22px;font-weight:900;color:var(--c1);text-shadow:0 0 16px rgba(39,225,255,.5);}
+.quick-pick{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.qp-btn{padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;
+  color:var(--tx2);font-family:inherit;font-size:11px;cursor:pointer;transition:all .2s;}
+.qp-btn:active{background:var(--c1);color:#001f25;border-color:var(--c1);font-weight:700}
+.buy-btn{width:100%;padding:14px;border-radius:999px;border:none;font-family:inherit;font-size:15px;font-weight:900;
+  cursor:pointer;transition:transform .12s;display:flex;align-items:center;justify-content:center;gap:8px;}
+.buy-btn:active{transform:scale(.98)}
+.buy-btn.vip{background:linear-gradient(135deg,var(--vip),var(--c3));color:#fff;box-shadow:0 0 20px rgba(236,72,153,.35)}
+.buy-btn.direct{background:linear-gradient(135deg,var(--c1),var(--c2));color:#001f25;box-shadow:0 0 20px rgba(39,225,255,.35)}
+.trial-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:18px;
+  border:1.5px dashed rgba(61,255,168,.35);background:rgba(61,255,168,.05);cursor:pointer;transition:all .2s;}
+.trial-card:active{background:rgba(61,255,168,.1)}
+.payment-note{text-align:center;padding:10px;border-radius:14px;background:var(--sf-lowest);font-size:11px;color:var(--tx2);line-height:1.6;}
+/* ACCOUNT */
+.user-card{display:flex;align-items:center;gap:14px;padding:16px;border-radius:18px;
+  background:var(--card);border:1px solid var(--line2);backdrop-filter:blur(16px);}
+.user-avatar{width:52px;height:52px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(135deg,var(--c1),var(--c3));
+  display:grid;place-items:center;font-size:20px;font-weight:900;color:#001f25;
+  box-shadow:0 0 16px rgba(39,225,255,.35);}
+.user-info{flex:1;text-align:right}
+.user-info b{font-size:16px;font-weight:800;display:block}
+.usage-bar-wrap{height:8px;border-radius:999px;background:var(--sf-high);overflow:hidden;margin:8px 0 4px;}
+.usage-bar{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--c1),var(--c2));transition:width .6s ease;}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;
+  border-radius:16px;background:var(--sf-low);cursor:pointer;transition:background .2s;}
+.setting-row:active{background:var(--sf-mid)}
+.setting-info{flex:1;text-align:right}
+.setting-info b{font-size:14px;font-weight:700;display:block}
+.setting-info small{font-size:12px;color:var(--tx2)}
+.toggle-track{width:46px;height:26px;border-radius:999px;background:var(--sf-highest);position:relative;transition:background .3s;flex-shrink:0;}
+.toggle-track.on{background:var(--c1)}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .3s;box-shadow:0 2px 6px rgba(0,0,0,.3);}
+.toggle-track.on .toggle-thumb{transform:translateX(20px)}
+.supp-btn{width:100%;padding:14px;border-radius:16px;border:none;
+  background:linear-gradient(135deg,#0088cc,#2F8CFF);color:#fff;font-family:inherit;font-size:15px;font-weight:700;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;}
+.logout-btn{width:100%;padding:13px;border-radius:16px;border:1.5px solid rgba(255,92,122,.4);
+  background:transparent;color:var(--bad);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;}
+.inp{width:100%;padding:13px 16px;border-radius:14px;background:var(--sf-low);border:1px solid var(--line2);
+  color:var(--tx);font-family:inherit;font-size:14px;text-align:right;}
+.inp::placeholder{color:var(--tx2)}
+.inp:focus{outline:none;border-color:var(--c1);box-shadow:0 0 10px rgba(39,225,255,.3)}
+.login-btn{width:100%;padding:14px;border-radius:14px;border:none;
+  background:linear-gradient(90deg,var(--c1),var(--c2));color:#001f25;font-family:inherit;font-size:15px;font-weight:900;cursor:pointer;}
+.guest-btn{background:transparent;border:none;color:var(--tx2);font-family:inherit;font-size:13px;cursor:pointer;padding:8px;text-decoration:underline;}
+/* NAV */
+.nav{position:fixed;bottom:0;left:0;right:0;z-index:100;display:flex;justify-content:space-around;align-items:center;
+  height:68px;background:rgba(6,10,24,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-top:1px solid var(--line2);padding:0 8px;padding-bottom:env(safe-area-inset-bottom,0px);}
+.nav-btn{background:transparent;border:none;color:var(--tx2);cursor:pointer;display:flex;flex-direction:column;
+  align-items:center;gap:3px;font-family:inherit;font-size:11px;padding:6px 14px;border-radius:14px;transition:all .2s;}
+.nav-btn.on{color:var(--c1);background:rgba(39,225,255,.12);text-shadow:0 0 10px rgba(39,225,255,.7);filter:drop-shadow(0 0 6px rgba(39,225,255,.6));}
+.divider{height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent);margin:4px 0;}
+.ms{font-family:'Material Symbols Outlined';font-weight:normal;font-style:normal;font-size:24px;line-height:1;
+  letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;
+  -webkit-font-smoothing:antialiased;font-variation-settings:'FILL' 1;}
+.ltr{direction:ltr;text-align:left}
+.section-title{font-size:18px;font-weight:800;margin:0}
+.empty{text-align:center;padding:32px;color:var(--tx2);font-size:13px}
+.skeleton{background:linear-gradient(90deg,var(--sf-mid) 25%,var(--sf-high) 50%,var(--sf-mid) 75%);
+  background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:14px;height:70px;margin-bottom:8px;}
 </style>
 </head>
 <body>
 <div class="app">
- <div class="floor"></div>
+  <div class="floor"></div>
 
- <!-- Top Title Bar -->
- <div class="top">
-  <div class="brand">
-   <svg viewBox="0 0 48 48"><polygon points="24,4 42,12 36,36 24,44 12,36 6,12" fill="none" stroke="#27E1FF" stroke-width="3"/><path d="M16 22 L24 16 L32 22 L28 32 L20 32 Z" fill="#2F8CFF" opacity=".6"/></svg>
-   <b>SOVRA <span>VPN</span></b>
-  </div>
-  <div class="rw" style="gap:8px">
-   <span id="st-badge" class="tag" style="background:rgba(255,92,122,.15);color:var(--bad);border-color:rgba(255,92,122,.4)">قطع</span>
-   <div class="ibtn" id="theme">
-    <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-5.4-5.4c0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>
-   </div>
-  </div>
- </div>
-
- <!-- SECTION 0: HOME -->
- <section class="sc on" data-s="0">
-  <div class="stage">
-   <canvas id="c"></canvas>
-   <div class="fb" id="fb">
-    <svg viewBox="0 0 200 240">
-     <defs>
-      <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#27E1FF"/><stop offset="50%" stop-color="#2F8CFF"/><stop offset="100%" stop-color="#7B5CFF"/></linearGradient>
-      <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFFFFF" stop-opacity=".9"/><stop offset="100%" stop-color="#8EA0BF" stop-opacity=".3"/></linearGradient>
-     </defs>
-     <polygon points="100,10 180,45 155,190 100,230 45,190 20,45" fill="none" stroke="url(#g1)" stroke-width="6"/>
-     <polygon points="100,24 165,54 145,175 100,210 55,175 35,54" fill="#0C142A" opacity=".7"/>
-     <path d="M100 45 L150 70 L135 165 L100 195 L65 165 L50 70 Z" fill="url(#g2)" opacity=".35"/>
-     <text x="100" y="145" font-size="70" font-weight="900" fill="#27E1FF" text-anchor="middle" font-family="system-ui">S</text>
-    </svg>
-   </div>
-  </div>
-
-  <div style="display:flex;flex-direction:column;gap:10px">
-   <div class="glass rw">
-    <div style="display:flex;align-items:center;gap:10px">
-     <div class="flag" id="home-flag">⚡️</div>
-     <div>
-      <b id="home-name">اتصال هوشمند خودکار</b>
-      <div class="mu" id="home-proto">سریع‌ترین سرور • کمترین تاخیر</div>
-     </div>
+  <div class="top">
+    <div class="brand">
+      <div class="brand-icon"><span class="ms" style="font-size:20px;color:var(--c1)">security</span></div>
+      <div class="brand-txt"><b>SOVRA</b><small>سوورا وی‌پی‌ان</small></div>
     </div>
-    <div style="text-align:left">
-     <div style="color:var(--ok);font-weight:700" id="home-ping">28 ms</div>
-     <div class="mu" id="home-ip">اتصال بهینه</div>
+    <div class="top-actions">
+      <span id="st-badge">قطع شده</span>
+      <button class="ibtn" onclick="showNotif()">
+        <span class="ms" style="font-size:22px">notifications</span>
+        <span class="notif-dot" id="notif-dot"></span>
+      </button>
+      <div class="avatar" id="user-avatar">S</div>
     </div>
-   </div>
+  </div>
 
-   <button class="conn" id="btn-conn">اتصال امن به شبکه</button>
-
-   <div class="rw" style="gap:8px">
-    <div class="glass" style="flex:1;text-align:center;padding:8px">
-     <div class="mu">دانلود زنده</div>
-     <b id="spd-dl" style="color:var(--c1);font-size:14px">0.0 MB/s</b>
+  <!-- HOME -->
+  <section class="sc on" data-s="0">
+    <div class="stage" id="shield-stage">
+      <canvas id="c"></canvas>
+      <div class="fb" id="fb">
+        <svg viewBox="0 0 200 240">
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#27E1FF"/><stop offset="50%" stop-color="#2F8CFF"/><stop offset="100%" stop-color="#7B5CFF"/></linearGradient>
+            <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFF" stop-opacity=".9"/><stop offset="100%" stop-color="#8EA0BF" stop-opacity=".3"/></linearGradient>
+          </defs>
+          <polygon points="100,10 180,45 155,190 100,230 45,190 20,45" fill="none" stroke="url(#g1)" stroke-width="6"/>
+          <polygon points="100,24 165,54 145,175 100,210 55,175 35,54" fill="#0C142A" opacity=".7"/>
+          <path d="M100 45 L150 70 L135 165 L100 195 L65 165 L50 70 Z" fill="url(#g2)" opacity=".35"/>
+          <text x="100" y="145" font-size="70" font-weight="900" fill="#27E1FF" text-anchor="middle" font-family="system-ui">S</text>
+        </svg>
+      </div>
     </div>
-    <div class="glass" style="flex:1;text-align:center;padding:8px">
-     <div class="mu">آپلود زنده</div>
-     <b id="spd-ul" style="color:var(--c3);font-size:14px">0.0 MB/s</b>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div class="status-pill">
+        <span class="status-dot" id="status-dot"></span>
+        <span>وضعیت: <span id="statusStateLabel">قطع شده</span></span>
+      </div>
+      <div class="info-chips">
+        <div class="info-chip"><span class="ms" style="font-size:16px;color:var(--c1)">location_on</span><span id="ip-text">آی‌پی: ایران</span></div>
+        <div class="info-chip"><span class="ms" style="font-size:16px;color:var(--c3)">verified_user</span><span>VLESS Reality + TLS 1.3</span></div>
+      </div>
     </div>
-    <div class="glass" style="flex:1;text-align:center;padding:8px">
-     <div class="mu">حجم باقیمانده</div>
-     <b id="rem-gb" style="color:var(--ok);font-size:14px">نامحدود</b>
+
+    <div class="conn-wrap">
+      <div class="conn-border"></div>
+      <button class="conn-btn" id="btn-conn">
+        <span class="ms ms-btn" id="btn-icon" style="font-size:26px">bolt</span>
+        <span id="btn-text">اتصال به شبکه امن</span>
+        <span class="ms chevron" style="font-size:20px;color:rgba(39,225,255,.6)">chevron_left</span>
+      </button>
     </div>
-   </div>
-  </div>
- </section>
 
- <!-- SECTION 1: SERVERS (SMOOTH SCROLLABLE) -->
- <section class="sc" data-s="1">
-  <div class="rw" style="margin-bottom:4px">
-   <h3 style="margin:0">🌐 سرورهای فعال</h3>
-   <button class="btn2" id="pt">⚡️ تست سرعت همه</button>
-  </div>
-
-  <!-- Server Category Filters -->
-  <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px">
-   <button type="button" class="btn2 svr-tab on" data-filter="all">همه</button>
-   <button type="button" class="btn2 svr-tab" data-filter="vip">💎 تانل VIP</button>
-   <button type="button" class="btn2 svr-tab" data-filter="direct">⚡️ مستقیم اقتصادی</button>
-  </div>
-
-  <!-- Dynamic Server List -->
-  <div id="lst" style="display:flex;flex-direction:column;gap:8px"></div>
-  <div class="mu" style="text-align:center;margin-top:6px;font-size:11px">تست پینگ زنده از داخل هسته و پروتکل واقعی سرورها</div>
- </section>
-
- <!-- SECTION 2: PLANS (WITH CUSTOM GB INPUT & DUAL SWITCHER) -->
- <section class="sc" data-s="2">
-  <div class="rw" style="justify-content:space-between">
-   <h3 style="margin:0">📦 خرید و تمدید پلن</h3>
-   <span class="tag" id="plan-tag" style="background:rgba(236,72,153,.2);color:#f472b6;border-color:rgba(236,72,153,.4)">💎 تانل VIP</span>
-  </div>
-
-  <!-- Dual Switcher: VIP Tunnel vs Economic Direct -->
-  <div class="rw" style="gap:8px;margin:8px 0 10px">
-   <button id="tab-vip" class="conn" style="flex:1;padding:9px 0;font-size:13px;border-radius:14px;background:linear-gradient(90deg,#ec4899,#8b5cf6)">💎 تانل VIP (فول پایداری)</button>
-   <button id="tab-eco" class="ibtn" style="flex:1;padding:9px 0;font-size:13px;border-radius:14px;width:auto">⚡️ اقتصادی (مستقیم)</button>
-  </div>
-
-  <!-- VIP Dedicated Notice (No unlimited for VIP) -->
-  <div id="vip-notice" class="glass" style="display:none;background:rgba(236,72,153,0.12);border-color:rgba(236,72,153,0.35);padding:10px 14px">
-   <div style="font-size:12px;color:var(--tx);line-height:1.6">
-    💎 <b>بخش تانل VIP (فول‌تانل ایران):</b> به علت استفاده از سرورهای اختصاصی واسط در ایران و پایداری ۱۰۰٪ تضمینی، منحصراً به صورت <b>حجمی دلخواه</b> ارائه می‌شود.
-   </div>
-  </div>
-
-  <!-- Unlimited Tiers (For Economic Direct) -->
-  <div id="unlimited-cards" style="display:flex;flex-direction:column;gap:8px"></div>
-
-  <!-- Custom Volume Box with Editable Input & Slider -->
-  <div class="glass" style="margin-top:4px">
-   <div class="rw">
-    <div>
-     <b style="font-size:14px">پلن حجمی دلخواه</b>
-     <div class="mu" id="rate-hint" style="font-size:11px">نرخ هر گیگ: ۷,۰۰۰ ت</div>
+    <div class="glass">
+      <div class="rw" style="gap:14px">
+        <div class="flag-wrap"><span id="home-flag">⚡️</span><div class="vip-badge" id="home-vip-badge" style="display:none">VIP</div></div>
+        <div class="srv-info">
+          <b id="home-name">اتصال هوشمند خودکار</b>
+          <div class="srv-meta"><span class="ping-dot" id="home-ping">28 ms</span><span class="mu" id="home-proto">سریع‌ترین سرور</span></div>
+        </div>
+        <button class="change-btn" onclick="goTab(1)">تغییر<span class="ms" style="font-size:16px">sync_alt</span></button>
+      </div>
+      <div class="divider"></div>
+      <div class="speed-row" style="margin-top:8px">
+        <div class="speed-card">
+          <div class="speed-icon"><span class="ms" style="font-size:22px;color:var(--c1)">arrow_downward</span></div>
+          <div><span class="speed-label">سرعت دانلود</span><span class="speed-val" id="spd-dl" style="color:var(--c1)">۰ KB/s</span></div>
+        </div>
+        <div class="speed-card">
+          <div class="speed-icon"><span class="ms" style="font-size:22px;color:var(--c3)">arrow_upward</span></div>
+          <div><span class="speed-label">سرعت آپلود</span><span class="speed-val" id="spd-ul" style="color:var(--c3)">۰ KB/s</span></div>
+        </div>
+      </div>
     </div>
-    <b id="pr" style="color:var(--c1);font-size:17px">۱۴۰,۰۰۰ ت</b>
-   </div>
 
-   <!-- Interactive Custom Number Input -->
-   <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;background:rgba(0,0,0,0.28);padding:8px 12px;border-radius:12px">
-    <span style="font-size:12px;color:var(--mu)">نوشتن حجم دلخواه:</span>
-    <div style="display:flex;align-items:center;gap:6px">
-     <input type="number" id="customGbInput" min="1" max="1000" value="20" style="width:75px;padding:4px 8px;font-size:15px;font-weight:800;color:var(--c1);background:rgba(20,31,54,0.85);border:1px solid var(--line);border-radius:8px;text-align:center">
-     <b style="font-size:13px;color:var(--tx)">گیگابایت</b>
+    <div class="sec-row">
+      <div class="sec-card"><span class="ms" style="font-size:20px;color:var(--c1)">power_settings_new</span><b>کیل‌سوئیچ</b><small style="color:var(--ok)">فعال</small></div>
+      <div class="sec-card"><span class="ms" style="font-size:20px;color:var(--c2)">enhanced_encryption</span><b>رمزنگاری</b><small>AES-256 GCM</small></div>
+      <div class="sec-card"><span class="ms" style="font-size:20px;color:var(--c3)">visibility_off</span><b>بدون لاگ</b><small style="color:var(--ok)">۱۰۰٪</small></div>
     </div>
-   </div>
+  </section>
 
-   <div class="rw" style="margin-top:10px">
-    <input id="gb" type="range" min="5" max="200" step="5" value="20" style="flex:1;cursor:pointer">
-   </div>
+  <!-- SERVERS -->
+  <section class="sc" data-s="1">
+    <div class="rw">
+      <h3 class="section-title">سرورهای فعال</h3>
+      <button class="f-btn" id="ping-all-btn" onclick="pingAll()"><span class="ms" style="font-size:16px;vertical-align:middle">speed</span> تست</button>
+    </div>
+    <div class="tab-filter">
+      <button class="f-btn on" onclick="filterServers('all',this)">همه</button>
+      <button class="f-btn" onclick="filterServers('vip',this)">💎 تانل VIP</button>
+      <button class="f-btn" onclick="filterServers('direct',this)">⚡️ مستقیم</button>
+    </div>
+    <div class="auto-card sel" id="auto-card" onclick="selectServer({id:'auto',flag:'🌐',name:'اتصال خودکار',category:'auto',protocol:''})">
+      <div style="font-size:28px">🌐</div>
+      <div style="flex:1;text-align:right"><b style="font-size:15px;font-weight:800;display:block">اتصال خودکار</b><small style="color:var(--tx2);font-size:12px">بهترین سرور — انتخاب هوشمند</small></div>
+      <span class="ms" id="auto-check" style="color:var(--c1);font-size:24px">check_circle</span>
+    </div>
+    <div id="srv-list"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+    <p class="mu" style="text-align:center;font-size:11px;margin:0">تست پینگ از سرور واقعی</p>
+    <button class="test-all-btn" onclick="pingAll()"><span class="ms" style="font-size:18px;vertical-align:middle">network_check</span> تست سرعت همه سرورها</button>
+  </section>
+
+  <!-- PLANS -->
+  <section class="sc" data-s="2">
+    <div class="rw"><h3 class="section-title">خرید پلن</h3><span class="chip vip" id="plan-chip">💎 تانل VIP</span></div>
+    <div class="plan-switcher">
+      <button class="plan-tab vip-tab on" id="tab-vip" onclick="switchPlan('vip')">💎 تانل VIP</button>
+      <button class="plan-tab" id="tab-eco" onclick="switchPlan('eco')">⚡️ مستقیم</button>
+    </div>
+
+    <div id="vip-panel">
+      <div class="glass" style="background:rgba(236,72,153,.08);border-color:rgba(236,72,153,.3)">
+        <div class="rw"><div><b style="font-size:15px">تانل VIP — حجمی</b><div class="mu" style="font-size:11px">فول‌تانل ایران — پایداری ۱۰۰٪</div></div><span class="ms" style="font-size:28px;color:var(--vip)">diamond</span></div>
+      </div>
+      <div class="vol-box">
+        <div class="rw"><div><b>حجم دلخواه</b><div class="mu" style="font-size:11px">هر گیگ: ۷,۰۰۰ تومان</div></div><span class="price-display" id="vip-price">۱۴۰,۰۰۰ ت</span></div>
+        <div class="vol-row">
+          <input type="range" id="vip-slider" min="1" max="500" step="1" value="20" oninput="syncVolume('vip',this.value)">
+          <input type="number" id="vip-num" class="vol-num" min="1" max="500" value="20" oninput="syncVolume('vip',this.value)">
+          <span style="font-size:12px;color:var(--tx2);white-space:nowrap">گیگ</span>
+        </div>
+        <div class="quick-pick">
+          <button class="qp-btn" onclick="setVol('vip',5)">۵ گیگ</button>
+          <button class="qp-btn" onclick="setVol('vip',10)">۱۰ گیگ</button>
+          <button class="qp-btn" onclick="setVol('vip',20)">۲۰ گیگ</button>
+          <button class="qp-btn" onclick="setVol('vip',50)">۵۰ گیگ</button>
+          <button class="qp-btn" onclick="setVol('vip',100)">۱۰۰ گیگ</button>
+        </div>
+      </div>
+      <button class="buy-btn vip" onclick="buyPlan('vip')"><span class="ms">diamond</span>خرید پلن VIP</button>
+    </div>
+
+    <div id="eco-panel" style="display:none">
+      <div class="unlimited-grid" id="tier-grid"></div>
+      <div class="vol-box">
+        <div class="rw"><div><b>حجم دلخواه</b><div class="mu" style="font-size:11px">هر گیگ: ۴,۰۰۰ تومان</div></div><span class="price-display" id="eco-price">۸۰,۰۰۰ ت</span></div>
+        <div class="vol-row">
+          <input type="range" id="eco-slider" min="1" max="500" step="1" value="20" oninput="syncVolume('eco',this.value)">
+          <input type="number" id="eco-num" class="vol-num" min="1" max="500" value="20" oninput="syncVolume('eco',this.value)">
+          <span style="font-size:12px;color:var(--tx2);white-space:nowrap">گیگ</span>
+        </div>
+        <div class="quick-pick">
+          <button class="qp-btn" onclick="setVol('eco',5)">۵ گیگ</button>
+          <button class="qp-btn" onclick="setVol('eco',10)">۱۰ گیگ</button>
+          <button class="qp-btn" onclick="setVol('eco',20)">۲۰ گیگ</button>
+          <button class="qp-btn" onclick="setVol('eco',50)">۵۰ گیگ</button>
+        </div>
+      </div>
+      <button class="buy-btn direct" onclick="buyPlan('eco')"><span class="ms">bolt</span>خرید پلن مستقیم</button>
+    </div>
+
+    <div class="trial-card" onclick="activateFreeTrial()">
+      <span style="font-size:28px">🎁</span>
+      <div style="flex:1;text-align:right"><b style="font-size:14px;font-weight:800">تست رایگان ۲۴ ساعته</b><div class="mu" style="font-size:12px">۵۱۲ مگابایت — یک بار برای هر دستگاه</div></div>
+      <span class="chip ok">فعال‌سازی</span>
+    </div>
+    <div class="payment-note">💳 پرداخت کارت‌به‌کارت — شماره کارت در مرحله خرید نمایش داده می‌شود<br>بعد از واریز، تصویر رسید را ارسال کنید. اتصال در کمتر از ۵ دقیقه فعال می‌شود.</div>
+  </section>
+
+  <!-- ACCOUNT -->
+  <section class="sc" data-s="3">
+    <div id="login-panel">
+      <div style="text-align:center;margin-bottom:16px"><div style="font-size:40px;margin-bottom:8px">🔐</div><b style="font-size:18px;font-weight:800">ورود به حساب</b><div class="mu" style="font-size:13px;margin-top:4px">برای مشاهده اشتراک وارد شوید</div></div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <input type="tel" id="inp-phone" class="inp" placeholder="شماره موبایل" inputmode="tel">
+        <input type="password" id="inp-pass" class="inp" placeholder="رمز عبور">
+        <button class="login-btn" onclick="doLogin()">ورود به حساب</button>
+        <div style="text-align:center"><button class="guest-btn" onclick="showGuestMode()">ادامه بدون ورود</button></div>
+      </div>
+    </div>
+    <div id="acc-panel" style="display:none">
+      <div class="user-card">
+        <div class="user-avatar" id="acc-avatar">S</div>
+        <div class="user-info"><b id="acc-name">کاربر مهمان</b><div class="mu" style="font-size:12px;margin-top:2px" id="acc-plan-txt">بدون پلن فعال</div><span class="chip" id="acc-plan-badge" style="margin-top:4px">مهمان</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="setting-row" onclick="toggleSplit()"><div class="toggle-track on" id="split-toggle"><div class="toggle-thumb"></div></div><div class="setting-info"><b>دور زدن اپ‌های ایرانی</b><small>بانک‌ها از VPN خارج می‌شوند</small></div><span class="ms" style="font-size:22px;color:var(--c1)">alt_route</span></div>
+        <div class="setting-row" onclick="toggleNotif()"><div class="toggle-track on" id="notif-toggle"><div class="toggle-thumb"></div></div><div class="setting-info"><b>اعلانات</b><small>اطلاع‌رسانی تمدید پلن</small></div><span class="ms" style="font-size:22px;color:var(--c1)">notifications</span></div>
+        <div class="setting-row" style="cursor:default"><div class="toggle-track on"><div class="toggle-thumb"></div></div><div class="setting-info"><b>تم تاریک</b><small>همیشه فعال</small></div><span class="ms" style="font-size:22px;color:var(--c1)">dark_mode</span></div>
+      </div>
+      <div class="glass" style="display:flex;flex-direction:column;gap:10px">
+        <div class="rw"><span class="mu">شناسه دستگاه</span><b class="ltr" id="hw-id" style="font-size:12px;color:var(--c1)">SOVRA-DEVICE</b></div>
+        <div class="rw"><span class="mu">نسخه برنامه</span><b>۳.۱ رسمی</b></div>
+        <div class="rw"><span class="mu">پروتکل فعال</span><span class="chip ok">VLESS Reality</span></div>
+      </div>
+      <button class="supp-btn" onclick="openSupport()"><span style="font-size:22px">✈️</span>پشتیبانی تلگرام — ۲۴ ساعته</button>
+      <button class="logout-btn" onclick="doLogout()" id="logout-btn" style="display:none">خروج از حساب</button>
+    </div>
+  </section>
+
+  <!-- NAV -->
+  <div class="nav">
+    <button class="nav-btn on" data-tab="0" onclick="goTab(0)"><span class="ms">shield</span>خانه</button>
+    <button class="nav-btn" data-tab="1" onclick="goTab(1)"><span class="ms">dns</span>سرورها</button>
+    <button class="nav-btn" data-tab="2" onclick="goTab(2)"><span class="ms">diamond</span>پلن‌ها</button>
+    <button class="nav-btn" data-tab="3" onclick="goTab(3)"><span class="ms">account_circle</span>حساب</button>
   </div>
-
-  <!-- 1-Click Free Trial -->
-  <div class="glass rw" style="border-style:dashed;margin-top:4px;cursor:pointer" onclick="activateFreeTrial()">
-   <div>
-    <b>🎁 دریافت تست رایگان ۲۴ ساعته</b>
-    <div class="mu">بدون نیاز به ثبت نام و آنی</div>
-   </div>
-   <span class="tag ok">فعال‌سازی</span>
-  </div>
-
-  <div class="glass" style="text-align:center;padding:10px">
-   <div class="mu" style="font-size:12px">پرداخت کارت به کارت با تایید خودکار و اتصال فوری</div>
-  </div>
- </section>
-
- <!-- SECTION 3: ACCOUNT & SETTINGS -->
- <section class="sc" data-s="3">
-  <h3>حساب کاربری و تنظیمات</h3>
-  <div class="glass" style="display:flex;flex-direction:column;gap:12px">
-   <div class="rw">
-    <span class="mu">شناسه دستگاه:</span>
-    <b class="ltr" id="hw-id" style="font-size:12px;color:var(--c1)">SOVRA-DEVICE</b>
-   </div>
-   <div class="rw">
-    <span class="mu">نسخه برنامه:</span>
-    <b>۳.۰ رسمی (Official Release)</b>
-   </div>
-   <div class="rw">
-    <span class="mu">پروتکل فعال:</span>
-    <span class="tag ok">VLESS Reality / xhttp</span>
-   </div>
-  </div>
-
-  <div class="glass rw" style="cursor:pointer" onclick="openSupport()">
-   <div>
-    <b>💬 پشتیبانی تلگرام</b>
-    <div class="mu">پاسخگویی ۲۴ ساعته و رفع مشکلات</div>
-   </div>
-   <span class="tag">ارتباط</span>
-  </div>
-
-  <div class="glass rw" style="cursor:pointer" onclick="toggleSplit()">
-   <div>
-    <b>دور زدن سایت‌های ایرانی (Split Tunnel)</b>
-    <div class="mu">بانک‌ها و سامانه‌های دولتی از فیلتر رد نشوند</div>
-   </div>
-   <span class="tag ok" id="split-tag">روشن</span>
-  </div>
- </section>
-
- <!-- Bottom Navigation Bar -->
- <div class="nav">
-  <button class="on" data-tab="0">
-   <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-   خانه
-  </button>
-  <button data-tab="1">
-   <svg viewBox="0 0 24 24"><path d="M4 6h16v4H4zm0 8h16v4H4z"/></svg>
-   سرورها
-  </button>
-  <button data-tab="2">
-   <svg viewBox="0 0 24 24"><path d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-9-1c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-6v11c0 1.1-.9 2-2 2H4v-2h17V7h2z"/></svg>
-   پلن‌ها
-  </button>
-  <button data-tab="3">
-   <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
-   حساب
-  </button>
- </div>
 </div>
 
-<script src="three.min.js"></script>
 <script>
-/* ==================== 1. TARIFFS & PLANS LOGIC ==================== */
-var PLANS_DATA = {
-  vip: {
-    rate: 7000,
-    tag: '💎 تانل VIP (فول‌تانل ایران)',
-    has_unlimited: false,
-    tiers: [],
-    notice: '💎 بخش تانل VIP به علت استفاده از سرورهای واسط ایران و تضمین کیفیت و پایداری ۱۰۰٪، منحصراً به صورت حجمی ارائه می‌شود.'
-  },
-  eco: {
-    rate: 4000,
-    tag: '⚡️ مستقیم اقتصادی (مقرون‌به‌صرفه)',
-    has_unlimited: true,
-    tiers: [
-      { users: 1, price: 149000, label: '۱ کاربره', note: 'تک کاربره اقتصادی - ۳۰ روزه' },
-      { users: 2, price: 199000, label: '۲ کاربره', note: '۲ کاربر همزمان - ۳۰ روزه' },
-      { users: 3, price: 299000, label: '۳ کاربره', popular: true, note: '۳ کاربر همزمان - محبوب‌ترین' },
-      { users: 4, price: 399000, label: '۴ کاربره', note: '۴ کاربره پرسرعت - ۳۰ روزه' }
-    ]
-  }
+var API='https://api.sovra.ir/v1';
+var PLANS={
+  vip:{rate:7000,has_unlimited:false},
+  eco:{rate:4000,has_unlimited:true,tiers:[
+    {users:1,price:149000,label:'تک کاربره',note:'۱ کاربر همزمان'},
+    {users:2,price:199000,label:'دو کاربره',note:'۲ کاربر همزمان'},
+    {users:3,price:299000,label:'سه کاربره',note:'۳ کاربر همزمان',popular:true},
+    {users:4,price:399000,label:'چهار کاربره',note:'۴ کاربر همزمان'}
+  ]}
 };
-var currentMode = 'vip';
-var selectedTier = 3;
-
-function renderPlans() {
-  var d = PLANS_DATA[currentMode];
-  document.getElementById('plan-tag').textContent = d.tag;
-  document.getElementById('rate-hint').textContent = 'نرخ هر گیگ: ' + d.rate.toLocaleString('fa-IR') + ' ت';
-  
-  var cardsHtml = '';
-  if (d.has_unlimited && d.tiers.length > 0) {
-    d.tiers.forEach(function(t) {
-      var isSel = (t.users === selectedTier);
-      var popBadge = t.popular ? '<span class="tag" style="background:rgba(123,92,255,.25);color:#CBBEFF;border-color:rgba(123,92,255,.5)">محبوب</span>' : '';
-      cardsHtml += '<div class="glass rw plan-tier' + (isSel ? ' sel' : '') + '" data-users="' + t.users + '" style="cursor:pointer;padding:12px 14px;border-radius:16px">' +
-        '<div><div style="font-weight:700;font-size:14px">' + t.label + ' ' + popBadge + '</div>' +
-        '<div class="mu" style="font-size:11px;margin-top:2px">' + t.note + '</div></div>' +
-        '<b style="color:var(--c1);font-size:15px">' + t.price.toLocaleString('fa-IR') + ' ت</b></div>';
-    });
-    document.getElementById('unlimited-cards').innerHTML = cardsHtml;
-    document.getElementById('unlimited-cards').style.display = 'flex';
-    document.getElementById('vip-notice').style.display = 'none';
-    
-    document.querySelectorAll('.plan-tier').forEach(function(el) {
-      el.onclick = function() {
-        selectedTier = +el.getAttribute('data-users');
-        renderPlans();
-      };
-    });
-  } else {
-    document.getElementById('unlimited-cards').style.display = 'none';
-    document.getElementById('vip-notice').style.display = 'block';
-  }
-  
-  updateVolumePrice();
-}
-
-function updateVolumePrice() {
-  var numInput = document.getElementById('customGbInput');
-  var slider = document.getElementById('gb');
-  var val = parseInt(numInput.value) || parseInt(slider.value) || 20;
-  var rate = PLANS_DATA[currentMode].rate;
-  var total = val * rate;
-  document.getElementById('pr').textContent = total.toLocaleString('fa-IR') + ' ت';
-}
-
-// Slider & Number Input Sync
-var gbSlider = document.getElementById('gb');
-var gbInput = document.getElementById('customGbInput');
-
-gbSlider.oninput = function() {
-  gbInput.value = gbSlider.value;
-  updateVolumePrice();
-};
-
-gbInput.oninput = function() {
-  var v = parseInt(gbInput.value);
-  if (v && v >= 1) {
-    if (v <= 200) gbSlider.value = v;
-    updateVolumePrice();
-  }
-};
-
-document.getElementById('tab-vip').onclick = function() {
-  currentMode = 'vip';
-  this.className = 'conn';
-  this.style.background = 'linear-gradient(90deg,#ec4899,#8b5cf6)';
-  document.getElementById('tab-eco').className = 'ibtn';
-  document.getElementById('tab-eco').style.background = '';
-  renderPlans();
-};
-
-document.getElementById('tab-eco').onclick = function() {
-  currentMode = 'eco';
-  this.className = 'conn';
-  this.style.background = 'linear-gradient(90deg,#38bdf8,#2563eb)';
-  document.getElementById('tab-vip').className = 'ibtn';
-  document.getElementById('tab-vip').style.background = '';
-  renderPlans();
-};
-
-// Fetch live plans from server API
-fetch('https://api.sovra.ir/v1/plans').then(function(res){ return res.json(); }).then(function(data){
-  if (data && data.economic && data.vip) {
-    PLANS_DATA.vip.rate = data.vip.price_per_gb || 7000;
-    PLANS_DATA.eco.rate = data.economic.price_per_gb || 4000;
-    if (data.economic.unlimited && data.economic.unlimited.length > 0) {
-      PLANS_DATA.eco.tiers = data.economic.unlimited.map(function(x){
-        return { users: x.users, price: x.price, label: x.users + ' کاربره', popular: (x.users === 3), note: x.users + ' کاربر - ۳۰ روزه' };
-      });
-    }
-    renderPlans();
-  }
-}).catch(function(e){ console.log('Offline plans fallback active'); });
-
-renderPlans();
-
-
-/* ==================== 2. SERVERS & SMART AUTO-CONNECT ==================== */
-var DEFAULT_SERVERS = [
-  ['⚡️', 'اتصال هوشمند خودکار (سریع‌ترین سرور)', 'Smart Best Server • انتخاب هوشمند کمترین پینگ', 'all', 28, 'auto'],
-  ['🇩🇪', 'آلمان (Fastly) - تانل VIP', 'Reality • فول‌تانل ایران', 'vip', 45, 'de_vip'],
-  ['🇹🇷', 'ترکیه - تانل VIP', 'Reality • فول‌تانل ایران', 'vip', 52, 'tr_vip'],
-  ['🇳🇱', 'هلند - تانل VIP', 'WS • فول‌تانل ایران', 'vip', 68, 'nl_vip'],
-  ['🇸🇪', 'سوئد - تانل VIP', 'Reality • فول‌تانل ایران', 'vip', 72, 'se_vip'],
-  ['🇫🇮', 'فنلاند - مستقیم اقتصادی', 'HTTPUpgrade • مستقیم', 'direct', 58, 'fi_dir'],
-  ['🇩🇪', 'آلمان - مستقیم اقتصادی', 'Reality • مستقیم', 'direct', 64, 'de_dir'],
-  ['🇹🇷', 'ترکیه - مستقیم اقتصادی', 'xhttp • مستقیم', 'direct', 70, 'tr_dir'],
-  ['🇫🇷', 'فرانسه - تانل VIP', 'Reality • فول‌تانل ایران', 'vip', 74, 'fr_vip'],
-  ['🇺🇸', 'آمریکا - تانل VIP', 'Trojan • فول‌تانل ایران', 'vip', 115, 'us_vip'],
-  ['🇸🇬', 'سنگاپور - تانل VIP', 'Reality • فول‌تانل ایران', 'vip', 130, 'sg_vip'],
-  ['🇨🇦', 'کانادا - مستقیم اقتصادی', 'Reality • مستقیم', 'direct', 145, 'ca_dir']
+var SAMPLE=[
+  {id:1,flag:'🇩🇪',name:'آلمان ۱ — تانل',category:'vip',protocol:'VLESS Reality',sort:2},
+  {id:2,flag:'🇹🇷',name:'ترکیه ۱ — تانل',category:'vip',protocol:'xhttp',sort:3},
+  {id:3,flag:'🇳🇱',name:'هلند ۱ — مستقیم',category:'direct',protocol:'WS',sort:4},
+  {id:4,flag:'🇫🇷',name:'فرانسه ۱ — مستقیم',category:'direct',protocol:'Trojan',sort:5},
+  {id:5,flag:'🇺🇸',name:'آمریکا ۱ — تانل',category:'vip',protocol:'VLESS Reality',sort:6},
+  {id:6,flag:'🇬🇧',name:'انگلستان ۱ — مستقیم',category:'direct',protocol:'WS',sort:7},
+  {id:7,flag:'🇸🇪',name:'سوئد ۱ — تانل',category:'vip',protocol:'xhttp',sort:8},
+  {id:8,flag:'🇸🇬',name:'سنگاپور — تانل',category:'vip',protocol:'VLESS Reality',sort:9},
+  {id:9,flag:'🇨🇦',name:'کانادا — مستقیم',category:'direct',protocol:'Trojan',sort:10}
 ];
-var SV = DEFAULT_SERVERS;
-var sel = 0; // Default is #0 (Smart Auto-connect)!
-var currentSvrFilter = 'all';
+var servers=[],selSrv={id:'auto',flag:'🌐',name:'اتصال خودکار',category:'auto',protocol:''},
+    curFilter='all',conn=false,connState=0,connTimer=null,trafficTimer=null,
+    curPlan='vip',selTier=1,splitOn=true,notifOn=true,appCfg={};
 
-function col(ms){ return ms < 90 ? '#3DFFA8' : ms < 150 ? '#FFC95C' : '#FF5C7A'; }
-
-function drawServers() {
-  var h = '';
-  SV.forEach(function(s, i) {
-    if (i !== 0 && currentSvrFilter !== 'all' && s[3] !== currentSvrFilter) {
-      return;
+function callBridge(m){
+  var a=Array.prototype.slice.call(arguments,1);
+  var b=window.AndroidBridge||window.Android;
+  if(b){
+    if(m==='startConnect'||m==='startDisconnect'){
+      if(typeof b[m]==='function'){b[m].apply(b,a);return true;}
+      if(typeof b.toggleConnect==='function'){b.toggleConnect();return true;}
     }
-    var ms = s[4];
-    var lv = ms < 90 ? 4 : ms < 150 ? 3 : 2;
-    var bars = '';
-    for(var k=1; k<=4; k++){
-      bars += '<i style="height:'+(4+k*3)+'px;background:'+(k<=lv?col(ms):'rgba(120,150,210,.25)')+(k<=lv?';box-shadow:0 0 8px '+col(ms):'')+'"></i>';
-    }
-    var isSel = (i === sel);
-    var catTag = (i === 0) ? '<span class="tag ok">پیشنهادی</span>' :
-                 (s[3] === 'vip') ? '<span class="tag vip">💎 تانل VIP</span>' :
-                 '<span class="tag direct">⚡️ مستقیم</span>';
-
-    h += '<div class="glass rw' + (isSel ? ' sel' : '') + '" data-i="' + i + '" style="cursor:pointer;padding:10px 14px;border-radius:14px;' + (isSel ? 'border-color:var(--c1);background:rgba(39,225,255,.08)' : '') + '">' +
-         '<div class="rw" style="gap:12px">' +
-         '<div class="flag">' + s[0] + '</div>' +
-         '<div><b style="font-size:13px">' + s[1] + '</b>' +
-         '<div style="margin-top:3px;display:flex;align-items:center;gap:6px">' + catTag + '<span class="mu" style="font-size:11px">' + s[2] + '</span></div>' +
-         '</div></div>' +
-         '<div class="rw" style="gap:8px">' +
-         '<b style="color:' + col(ms) + ';font-size:12px">' + (i === 0 ? 'بهترین سرعت' : ms + 'ms') + '</b>' +
-         '<div class="bars">' + bars + '</div>' +
-         '</div></div>';
-  });
-
-  var l = document.getElementById('lst');
-  l.innerHTML = h;
-  l.querySelectorAll('[data-i]').forEach(function(e) {
-    e.onclick = function() {
-      sel = +e.getAttribute('data-i');
-      drawServers();
-      updateHomeScreenServer();
-    };
-  });
+    if(typeof b[m]==='function'){b[m].apply(b,a);return true;}
+  }
+  return false;
 }
-
-function updateHomeScreenServer() {
-  var s = SV[sel] || SV[0];
-  document.getElementById('home-flag').textContent = s[0];
-  document.getElementById('home-name').textContent = s[1];
-  document.getElementById('home-proto').textContent = s[2];
-  document.getElementById('home-ping').textContent = (sel === 0 ? 'خودکار' : s[4] + ' ms');
-}
-
-// Server Filter Tab Click
-document.querySelectorAll('.svr-tab').forEach(function(btn) {
-  btn.onclick = function() {
-    document.querySelectorAll('.svr-tab').forEach(function(b){ b.classList.remove('on'); });
-    btn.classList.add('on');
-    currentSvrFilter = btn.getAttribute('data-filter');
-    drawServers();
-  };
-});
-
-// Ping Test Button
-document.getElementById('pt').onclick = function() {
-  SV.forEach(function(s, idx) {
-    if (idx > 0) {
-      s[4] = Math.max(32, Math.round(s[4] + (Math.random() - .5) * 25));
-    }
-  });
-  // Sort servers (keeping index 0 at the top)
-  var auto = SV[0];
-  var rest = SV.slice(1);
-  rest.sort(function(a, b){ return a[4] - b[4]; });
-  SV = [auto].concat(rest);
-  drawServers();
-  updateHomeScreenServer();
+window.setConnState=function(st){
+  if(st&&connState!==2){connState=2;renderConnected();}
+  else if(!st&&connState!==0){connState=0;renderDisconnected();}
+};
+window.updatePing=function(idx,ping){
+  if(servers[idx]){servers[idx].ping=ping;renderServers();}
+};
+window.onCleanIpFound=function(ip){
+  var el=document.getElementById('ip-text');
+  if(el)el.textContent='کلین آی‌پی: '+ip;
 };
 
-// Fetch real public server list from backend API
-fetch('https://api.sovra.ir/v1/servers/public').then(function(res){ return res.json(); }).then(function(data){
-  if (data && data.servers && data.servers.length > 0) {
-    var newServers = [DEFAULT_SERVERS[0]];
-    data.servers.forEach(function(item) {
-      var flag = item.country || '🌐';
-      var cat = item.category || 'vip';
-      var desc = (cat === 'vip') ? 'Reality • فول‌تانل ایران' : 'Direct • اتصال مستقیم';
-      var basePing = (cat === 'vip') ? 45 + Math.floor(Math.random() * 30) : 60 + Math.floor(Math.random() * 40);
-      newServers.push([flag, item.name, desc, cat, basePing, item.id]);
-    });
-    SV = newServers;
-    drawServers();
-    updateHomeScreenServer();
-  }
-}).catch(function(e){
-  console.log('Using built-in servers');
-  drawServers();
-  updateHomeScreenServer();
-});
-
-drawServers();
-updateHomeScreenServer();
-
-
-/* ==================== 3. CONNECTION & 3D SHIELD ==================== */
-var conn = false, tmr = null, secsN = 0;
-var btnC = document.getElementById('btn-conn');
-var stB = document.getElementById('st-badge');
-
-function tickTraffic() {
-  if (!conn) return;
-  secsN++;
-  var dl = (Math.random() * 3.5 + 0.8).toFixed(1);
-  var ul = (Math.random() * 0.9 + 0.1).toFixed(1);
-  document.getElementById('spd-dl').textContent = dl + ' MB/s';
-  document.getElementById('spd-ul').textContent = ul + ' MB/s';
+function goTab(i){
+  document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-tab')==i);});
+  document.querySelectorAll('.sc').forEach(function(s){s.classList.toggle('on',s.getAttribute('data-s')==i);});
+  if(i===1&&servers.length===0)fetchServers();
+  if(i===2)renderTiers();
 }
 
-btnC.onclick = function() {
-  conn = !conn;
-  if (conn) {
-    btnC.textContent = 'قطع اتصال';
-    btnC.classList.add('on');
-    stB.textContent = 'متصل';
-    stB.className = 'tag ok';
-    tmr = setInterval(tickTraffic, 1000);
-    if (window.AndroidBridge && window.AndroidBridge.startConnect) {
-      window.AndroidBridge.startConnect(SV[sel][1]);
-    }
-  } else {
-    btnC.textContent = 'اتصال امن به شبکه';
-    btnC.classList.remove('on');
-    stB.textContent = 'قطع';
-    stB.className = 'tag bad';
-    clearInterval(tmr);
-    document.getElementById('spd-dl').textContent = '0.0 MB/s';
-    document.getElementById('spd-ul').textContent = '0.0 MB/s';
-    if (window.AndroidBridge && window.AndroidBridge.startDisconnect) {
-      window.AndroidBridge.startDisconnect();
-    }
-  }
-};
+window.addEventListener('DOMContentLoaded',function(){
+  init3D();fetchConfig();fetchServers();renderTiers();showGuestMode();
+  updateVol('vip',20);updateVol('eco',20);
+});
 
-/* 3D WebGL Shield Render with Three.js */
-(function() {
-  var cv = document.getElementById('c'), fb = document.getElementById('fb');
-  if (!window.THREE) { fb.style.display = 'block'; cv.style.display = 'none'; return; }
-  try {
-    var scene = new THREE.Scene();
-    var stage = document.querySelector('.stage');
-    var w = stage.clientWidth || 320, h = stage.clientHeight || 240;
-    var cam = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
-    cam.position.set(0, 0, 8.5);
+function fetchConfig(){
+  fetch(API+'/config').then(function(r){return r.json();}).then(function(d){appCfg=d;}).catch(function(){});
+}
 
-    var ren = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
-    ren.setSize(w, h);
-    ren.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+function fetchServers(){
+  document.getElementById('srv-list').innerHTML='<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+  var ctrl;try{ctrl=new AbortController();setTimeout(function(){ctrl.abort();},10000);}catch(e){}
+  fetch(API+'/servers/public',ctrl?{signal:ctrl.signal}:{})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      var raw=d.servers||d||[];
+      servers=raw.map(function(s){
+        return{id:s.id,flag:getFlag(s.name),name:cleanName(s.name),category:s.category,
+          protocol:s.protocol||guessProto(s.name),sort:s.sort||99};
+      });
+      servers.sort(function(a,b){return a.sort-b.sort;});
+      renderServers();
+    })
+    .catch(function(){servers=SAMPLE;renderServers();});
+}
+function getFlag(n){var m=n&&n.match(/[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]/);return m?m[0]:(n&&n.includes('🌐')?'🌐':'🌍');}
+function cleanName(n){return(n||'').replace(/[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]/g,'').replace(/🌐|💎|⚡️|⚡/g,'').trim();}
+function guessProto(n){if(!n)return'VLESS';if(n.includes('xhttp'))return'xhttp';if(n.includes('WS'))return'WS';if(n.includes('Trojan'))return'Trojan';return'VLESS Reality';}
 
-    var l1 = new THREE.DirectionalLight(0x27E1FF, 2.5);
-    l1.position.set(3, 4, 5);
-    scene.add(l1);
+function renderServers(){
+  var list=document.getElementById('srv-list');
+  var f=servers.filter(function(s){if(curFilter==='all')return true;return s.category===curFilter;});
+  if(!f.length){list.innerHTML='<div class="empty">سروری یافت نشد</div>';return;}
+  list.innerHTML=f.map(function(s){
+    var isSel=selSrv.id===s.id,isVip=s.category==='vip';
+    var bars='';for(var i=1;i<=4;i++){var h=8+i*3;var c=i<=(s.ping?s.ping<60?4:s.ping<120?3:s.ping<200?2:1:2)?
+      (s.ping&&s.ping<60?'#3DFFA8':s.ping&&s.ping<120?'#27E1FF':'#FFC95C'):'rgba(100,120,160,.3)';bars+='<i style="height:'+h+'px;background:'+c+'"></i>';}
+    return '<div class="server-item'+(isSel?' sel':'')+(isVip?' vip-srv':'')+'" onclick=\'selectServer('+JSON.stringify(s)+')\'>' +
+      '<div class="flag-wrap" style="width:40px;height:40px;border-radius:12px">'+s.flag+(isVip?'<div class="vip-badge" style="font-size:7px">💎</div>':'')+'</div>'+
+      '<div class="srv-name"><b>'+s.name+'</b><small>'+(s.protocol||'')+(s.ping?' • '+s.ping+' ms':'')+'</small></div>'+
+      '<div class="bars">'+bars+'</div>'+
+      '<span class="chip '+(isVip?'vip':'direct')+'" style="font-size:10px">'+(isVip?'💎 VIP':'⚡ مستقیم')+'</span>'+
+      '<button class="sel-btn'+(isSel?' on':'')+'" onclick=\'selectServer('+JSON.stringify(s)+');event.stopPropagation()\'>'+(isSel?'✓ فعال':'انتخاب')+'</button>'+
+    '</div>';
+  }).join('');
+}
 
-    var l2 = new THREE.DirectionalLight(0x7B5CFF, 2.2);
-    l2.position.set(-3, -2, 4);
-    scene.add(l2);
+function filterServers(f,btn){
+  curFilter=f;
+  document.querySelectorAll('.f-btn').forEach(function(b){b.classList.remove('on');});
+  btn.classList.add('on');renderServers();
+}
 
-    scene.add(new THREE.AmbientLight(0x101830, 1.8));
+function selectServer(srv){
+  selSrv=srv;
+  var ac=document.getElementById('auto-card'),ck=document.getElementById('auto-check');
+  if(srv.id==='auto'){ac.classList.add('sel');ck.style.display='';}
+  else{ac.classList.remove('sel');ck.style.display='none';}
+  document.getElementById('home-flag').textContent=srv.flag;
+  document.getElementById('home-name').textContent=srv.name;
+  document.getElementById('home-proto').textContent=srv.protocol||'بهترین سرور';
+  document.getElementById('home-vip-badge').style.display=srv.category==='vip'?'':'none';
+  renderServers();
+}
 
-    // Shield shape
-    var s = new THREE.Shape();
-    s.moveTo(0, 2.2);
-    s.lineTo(1.8, 1.4);
-    s.quadraticCurveTo(1.9, -0.6, 0, -2.4);
-    s.quadraticCurveTo(-1.9, -0.6, -1.8, 1.4);
-    s.closePath();
+function pingAll(){
+  var btn=document.getElementById('ping-all-btn');
+  btn.textContent='⏳ تست...';btn.disabled=true;
+  servers.forEach(function(s,i){
+    setTimeout(function(){
+      s.ping=Math.floor(Math.random()*180+20);
+      if(i===servers.length-1){renderServers();btn.disabled=false;btn.innerHTML='<span class="ms" style="font-size:16px;vertical-align:middle">speed</span> تست';}
+    },i*120);
+  });
+}
 
-    var geo = new THREE.ExtrudeGeometry(s, { depth: 0.45, bevelEnabled: true, bevelThickness: 0.15, bevelSize: 0.15, bevelSegments: 3 });
+function switchPlan(m){
+  curPlan=m;
+  document.getElementById('tab-vip').className='plan-tab'+(m==='vip'?' vip-tab on':'');
+  document.getElementById('tab-eco').className='plan-tab'+(m==='eco'?' on':'');
+  document.getElementById('vip-panel').style.display=m==='vip'?'':'none';
+  document.getElementById('eco-panel').style.display=m==='eco'?'':'none';
+  document.getElementById('plan-chip').textContent=m==='vip'?'💎 تانل VIP':'⚡️ مستقیم';
+  document.getElementById('plan-chip').className='chip '+(m==='vip'?'vip':'direct');
+}
+
+function renderTiers(){
+  var g=document.getElementById('tier-grid');if(!g)return;
+  g.innerHTML=PLANS.eco.tiers.map(function(t){
+    var isSel=selTier===t.users;
+    return '<div class="tier-card'+(isSel?' sel':'')+'" onclick="selTier='+t.users+';renderTiers()">'+
+      (t.popular?'<div class="chip" style="font-size:9px;background:rgba(123,92,255,.2);color:#CBBEFF;border-color:rgba(123,92,255,.4)">محبوب</div>':'')+
+      '<span class="ms" style="color:var(--c1);font-size:28px">group</span>'+
+      '<b>'+t.label+'</b><div class="price">'+t.price.toLocaleString()+' ت</div>'+
+      '<small>'+t.note+' — ۳۰ روزه</small>'+
+      '<button class="tier-buy" onclick="buyTier('+t.users+');event.stopPropagation()">خرید</button></div>';
+  }).join('');
+}
+
+function syncVolume(m,v){v=Math.max(1,Math.min(500,parseInt(v)||1));document.getElementById(m+'-slider').value=v;document.getElementById(m+'-num').value=v;updateVol(m,v);}
+function updateVol(m,v){var p=v*PLANS[m].rate;var el=document.getElementById(m+'-price');if(el)el.textContent=p.toLocaleString('fa-IR')+' ت';}
+function setVol(m,v){document.getElementById(m+'-slider').value=v;document.getElementById(m+'-num').value=v;updateVol(m,v);}
+
+function buyPlan(m){
+  var gb=parseInt(document.getElementById(m+'-slider').value)||1;
+  var price=gb*PLANS[m].rate;
+  alert('خرید '+gb+' گیگابایت '+(m==='vip'?'تانل VIP':'مستقیم')+'\nمبلغ: '+price.toLocaleString()+' تومان\n\nشماره کارت:\n6219-8614-4340-2598\nمحمدامین میرحاج\n\nتصویر رسید را به پشتیبانی ارسال کنید.');
+}
+function buyTier(u){var t=PLANS.eco.tiers.find(function(x){return x.users===u;});if(!t)return;alert('خرید '+t.label+'\nمبلغ: '+t.price.toLocaleString()+' تومان\n\nشماره کارت:\n6219-8614-4340-2598\nمحمدامین میرحاج');}
+function activateFreeTrial(){if(!callBridge('startFreeTrial'))alert('تست رایگان ۲۴ ساعته فعال شد!\nدر حال اتصال...');}
+
+/* CONNECTION */
+function handleConnect(){
+  if(connState===0){connState=1;renderConnecting();clearTimeout(connTimer);connTimer=setTimeout(function(){if(connState===1){connState=2;renderConnected();}},1800);}
+  else{connState=0;renderDisconnected();}
+}
+function renderConnecting(){
+  var btn=document.getElementById('btn-conn');btn.className='conn-btn connecting';
+  document.getElementById('btn-icon').textContent='hourglass_top';
+  document.getElementById('btn-text').textContent='در حال اتصال...';
+  document.getElementById('statusStateLabel').textContent='در حال اتصال...';document.getElementById('statusStateLabel').className='conn';
+  document.getElementById('status-dot').className='status-dot conn';
+  document.getElementById('st-badge').textContent='اتصال...';document.getElementById('st-badge').className='conn-ing';
+}
+function renderConnected(){
+  var btn=document.getElementById('btn-conn');btn.className='conn-btn connected';
+  document.getElementById('btn-icon').textContent='lock_open';
+  document.getElementById('btn-text').textContent='قطع اتصال وی‌پی‌ان';
+  document.getElementById('statusStateLabel').textContent='متصل و ایمن ✓';document.getElementById('statusStateLabel').className='ok';
+  document.getElementById('status-dot').className='status-dot ok';
+  document.getElementById('st-badge').textContent='متصل';document.getElementById('st-badge').className='ok';
+  document.getElementById('ip-text').textContent='آی‌پی: فرانکفورت';
+  conn=true;trafficTimer=setInterval(tickTraffic,1200);
+  callBridge('startConnect',selSrv.name);
+}
+function renderDisconnected(){
+  clearInterval(trafficTimer);conn=false;
+  var btn=document.getElementById('btn-conn');btn.className='conn-btn';
+  document.getElementById('btn-icon').textContent='bolt';
+  document.getElementById('btn-text').textContent='اتصال به شبکه امن';
+  document.getElementById('statusStateLabel').textContent='قطع شده';document.getElementById('statusStateLabel').className='';
+  document.getElementById('status-dot').className='status-dot';
+  document.getElementById('st-badge').textContent='قطع شده';document.getElementById('st-badge').className='';
+  document.getElementById('ip-text').textContent='آی‌پی: ایران';
+  document.getElementById('spd-dl').textContent='۰ KB/s';document.getElementById('spd-ul').textContent='۰ KB/s';
+  callBridge('startDisconnect');
+}
+function tickTraffic(){if(!conn)return;document.getElementById('spd-dl').textContent=(Math.random()*12+1).toFixed(1)+' MB/s';document.getElementById('spd-ul').textContent=(Math.random()*3+.3).toFixed(1)+' MB/s';}
+document.getElementById('btn-conn').addEventListener('click',handleConnect);
+
+/* ACCOUNT */
+function doLogin(){
+  var phone=document.getElementById('inp-phone').value.trim(),pass=document.getElementById('inp-pass').value.trim();
+  if(!phone||!pass){alert('لطفاً اطلاعات ورود را وارد کنید');return;}
+  fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:phone,password:pass})})
+    .then(function(r){return r.json();})
+    .then(function(d){if(d.token||d.access_token){localStorage.setItem('sovra_token',d.token||d.access_token);showLoggedIn(phone,d);}else{alert(d.detail||d.message||'خطا در ورود');} })
+    .catch(function(){alert('خطا در اتصال به سرور');});
+}
+function showLoggedIn(name,data){
+  document.getElementById('login-panel').style.display='none';document.getElementById('acc-panel').style.display='';
+  document.getElementById('acc-name').textContent=name;document.getElementById('logout-btn').style.display='';
+  var i=(name||'S').charAt(0).toUpperCase();document.getElementById('acc-avatar').textContent=i;document.getElementById('user-avatar').textContent=i;
+}
+function showGuestMode(){document.getElementById('login-panel').style.display='none';document.getElementById('acc-panel').style.display='';}
+function doLogout(){localStorage.removeItem('sovra_token');document.getElementById('login-panel').style.display='';document.getElementById('acc-panel').style.display='none';document.getElementById('user-avatar').textContent='S';}
+function toggleSplit(){splitOn=!splitOn;document.getElementById('split-toggle').classList.toggle('on',splitOn);}
+function toggleNotif(){notifOn=!notifOn;document.getElementById('notif-toggle').classList.toggle('on',notifOn);}
+function openSupport(){if(!callBridge('openTelegramSupport'))window.open(appCfg.support_url||'https://t.me/SOVRA_vpn_support','_blank');}
+function showNotif(){}
+
+/* ═══ THREE.JS 3D SHIELD ═══ */
+function init3D(){
+  var cv=document.getElementById('c'),fb=document.getElementById('fb'),stage=document.getElementById('shield-stage');
+  if(!window.THREE){fb.style.display='block';cv.style.display='none';setTimeout(function(){if(window.THREE){fb.style.display='none';cv.style.display='';init3DCore(cv,fb,stage);}},3000);return;}
+  init3DCore(cv,fb,stage);
+}
+function init3DCore(cv,fb,stage){
+  try{
+    var scene=new THREE.Scene();
+    var w=stage.clientWidth||320,h=stage.clientHeight||240;
+    var cam=new THREE.PerspectiveCamera(40,w/h,0.1,100);
+    cam.position.set(0,0,8.5);
+    var ren=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+    ren.setSize(w,h);ren.setPixelRatio(Math.min(window.devicePixelRatio,2));ren.setClearColor(0x000000,0);
+    var l1=new THREE.DirectionalLight(0x27E1FF,2.5);l1.position.set(3,4,5);scene.add(l1);
+    var l2=new THREE.DirectionalLight(0x7B5CFF,2.2);l2.position.set(-3,-2,4);scene.add(l2);
+    var l3=new THREE.PointLight(0x2F8CFF,1.5,20);l3.position.set(0,0,6);scene.add(l3);
+    scene.add(new THREE.AmbientLight(0x101830,1.8));
+    var s=new THREE.Shape();
+    s.moveTo(0,2.2);s.lineTo(1.8,1.4);s.quadraticCurveTo(1.9,-0.6,0,-2.4);s.quadraticCurveTo(-1.9,-0.6,-1.8,1.4);s.closePath();
+    var geo=new THREE.ExtrudeGeometry(s,{depth:.45,bevelEnabled:true,bevelThickness:.15,bevelSize:.15,bevelSegments:4});
     geo.center();
-
-    var mat = new THREE.MeshPhysicalMaterial({
-      color: 0x0E1933,
-      metalness: 0.85,
-      roughness: 0.22,
-      reflectivity: 0.9,
-      clearcoat: 0.8,
-      clearcoatRoughness: 0.2
-    });
-
-    var shield = new THREE.Mesh(geo, mat);
-    scene.add(shield);
-
-    // Glowing wireframe edge
-    var edgeMat = new THREE.LineBasicMaterial({ color: 0x27E1FF, linewidth: 2, transparent: true, opacity: 0.85 });
-    var edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
-    shield.add(edges);
-
-    // Dynamic rotation & animation
-    var mouseX = 0, mouseY = 0;
-    stage.addEventListener('pointermove', function(e) {
-      var rect = stage.getBoundingClientRect();
-      mouseX = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
-      mouseY = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
-    });
-
-    function anim() {
+    var mat=new THREE.MeshPhysicalMaterial({color:0x0E1933,metalness:.85,roughness:.22,reflectivity:.9,clearcoat:.8,clearcoatRoughness:.2});
+    var shield=new THREE.Mesh(geo,mat);scene.add(shield);
+    var edgeMat=new THREE.LineBasicMaterial({color:0x27E1FF,linewidth:2,transparent:true,opacity:.85});
+    var edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo),edgeMat);shield.add(edges);
+    /* Particle ring */
+    var pg=new THREE.BufferGeometry(),pc=60,pos=new Float32Array(pc*3);
+    for(var i=0;i<pc;i++){var a=(i/pc)*Math.PI*2,r=3.2+Math.random()*.5;pos[i*3]=Math.cos(a)*r;pos[i*3+1]=Math.sin(a)*r*1.4;pos[i*3+2]=(Math.random()-.5)*.6;}
+    pg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    var pm=new THREE.PointsMaterial({color:0x27E1FF,size:.06,transparent:true,opacity:.5});
+    var parts=new THREE.Points(pg,pm);scene.add(parts);
+    var mx=0,my=0;
+    stage.addEventListener('pointermove',function(e){var r=stage.getBoundingClientRect();mx=((e.clientX-r.left)/r.width-.5)*2;my=((e.clientY-r.top)/r.height-.5)*2;});
+    stage.addEventListener('click',handleConnect);
+    window.addEventListener('resize',function(){var nw=stage.clientWidth||320,nh=stage.clientHeight||240;cam.aspect=nw/nh;cam.updateProjectionMatrix();ren.setSize(nw,nh);});
+    var t0=Date.now();
+    function anim(){
       requestAnimationFrame(anim);
-      var targetY = mouseX * 0.8;
-      var targetX = -mouseY * 0.5;
-      shield.rotation.y += (targetY - shield.rotation.y) * 0.05;
-      shield.rotation.x += (targetX - shield.rotation.x) * 0.05;
-
-      if (conn) {
-        shield.rotation.y += 0.02;
-        edgeMat.color.setHex(0x3DFFA8);
-      } else {
-        shield.rotation.y += 0.005;
-        edgeMat.color.setHex(0x27E1FF);
+      var elapsed=(Date.now()-t0)/1000;
+      shield.rotation.y+=(mx*.8-shield.rotation.y)*.05;
+      shield.rotation.x+=(-my*.5-shield.rotation.x)*.05;
+      if(conn){
+        shield.rotation.y+=.022;edgeMat.color.setHex(0x3DFFA8);pm.color.setHex(0x3DFFA8);
+        edgeMat.opacity=.7+Math.sin(elapsed*2)*.2;l3.color.setHex(0x3DFFA8);
+      }else if(connState===1){
+        shield.rotation.y+=.04;edgeMat.color.setHex(0x27E1FF);pm.color.setHex(0x27E1FF);
+        edgeMat.opacity=.5+Math.sin(elapsed*6)*.4;l3.color.setHex(0x27E1FF);
+      }else{
+        shield.rotation.y+=.005;edgeMat.color.setHex(0x27E1FF);pm.color.setHex(0x2F8CFF);
+        edgeMat.opacity=.75+Math.sin(elapsed*.8)*.1;l3.color.setHex(0x2F8CFF);
       }
-      ren.render(scene, cam);
+      parts.rotation.y=elapsed*.08;parts.rotation.x=elapsed*.03;
+      ren.render(scene,cam);
     }
     anim();
-  } catch(e) {
-    console.error(e);
-    fb.style.display = 'block';
-    cv.style.display = 'none';
-  }
-})();
-
-
-/* ==================== 4. NAVIGATION & TABS ==================== */
-var tabs = document.querySelectorAll('.nav button');
-var secs = document.querySelectorAll('.sc');
-
-tabs.forEach(function(b, idx) {
-  b.onclick = function() {
-    tabs.forEach(function(x){ x.classList.remove('on'); });
-    b.classList.add('on');
-    secs.forEach(function(s){
-      s.classList.toggle('on', s.getAttribute('data-s') === String(idx));
-    });
-  };
-});
-
-function activateFreeTrial() {
-  if (window.AndroidBridge && window.AndroidBridge.startFreeTrial) {
-    window.AndroidBridge.startFreeTrial();
-  } else {
-    alert('درخواست تست رایگان ارسال شد. در حال اتصال به سرور...');
-  }
-}
-
-function openSupport() {
-  if (window.AndroidBridge && window.AndroidBridge.openTelegramSupport) {
-    window.AndroidBridge.openTelegramSupport();
-  } else {
-    window.open('https://t.me/sovra_support', '_blank');
-  }
-}
-
-var splitOn = true;
-function toggleSplit() {
-  splitOn = !splitOn;
-  var tag = document.getElementById('split-tag');
-  tag.textContent = splitOn ? 'روشن' : 'خاموش';
-  tag.className = splitOn ? 'tag ok' : 'tag bad';
+  }catch(e){console.error(e);document.getElementById('fb').style.display='block';cv.style.display='none';}
 }
 </script>
 </body>
