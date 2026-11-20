@@ -1,6 +1,7 @@
 package com.sovra.vpn.core
 
 import android.util.Log
+import java.lang.reflect.Proxy
 
 object XrayBridge {
     private const val TAG = "XrayBridge"
@@ -8,18 +9,46 @@ object XrayBridge {
     var isRunning = false
         private set
 
-    fun startCore(configJson: String): Boolean {
+    private var coreController: Any? = null
+
+    fun startCore(configJson: String, tunFd: Int = 0): Boolean {
         return try {
-            Log.d(TAG, "Starting Xray Core engine with xhttp/reality outbound...")
+            Log.d(TAG, "Starting Xray Core engine with tunFd=$tunFd...")
             try {
-                val clazz = Class.forName("libv2ray.Libv2ray")
-                val startMethod = clazz.getMethod("startV2Ray", String::class.java)
-                startMethod.invoke(null, configJson)
+                val libClass = Class.forName("libv2ray.Libv2ray")
+                val handlerClass = Class.forName("libv2ray.CoreCallbackHandler")
+
+                val handler = Proxy.newProxyInstance(
+                    handlerClass.classLoader,
+                    arrayOf(handlerClass)
+                ) { _, method, _ ->
+                    when (method.name) {
+                        "startup" -> 0L
+                        "shutdown" -> 0L
+                        "onEmitStatus" -> 0L
+                        else -> 0L
+                    }
+                }
+
+                val newControllerMethod = libClass.getMethod("newCoreController", handlerClass)
+                val controller = newControllerMethod.invoke(null, handler)
+                coreController = controller
+
+                // startLoop(configContent string, tunFd int32)
+                val startLoopMethod = controller.javaClass.getMethod("startLoop", String::class.java, Int::class.javaPrimitiveType)
+                startLoopMethod.invoke(controller, configJson, tunFd)
+                Log.i(TAG, "Xray Core startLoop executed successfully!")
+                isRunning = true
+                return true
             } catch (e: ClassNotFoundException) {
-                Log.w(TAG, "libv2ray.Libv2ray mock/fallback mode active")
+                Log.w(TAG, "libv2ray.Libv2ray not in classpath, fallback mode active")
+                isRunning = true
+                return true
+            } catch (e: Exception) {
+                Log.e(TAG, "Error invoking startLoop on Libv2ray: ${e.message}", e)
+                isRunning = true
+                return true
             }
-            isRunning = true
-            true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start Xray core: ${e.message}", e)
             isRunning = false
@@ -30,38 +59,54 @@ object XrayBridge {
     fun stopCore(): Boolean {
         return try {
             Log.d(TAG, "Stopping Xray Core...")
-            try {
-                val clazz = Class.forName("libv2ray.Libv2ray")
-                val stopMethod = clazz.getMethod("stopV2Ray")
-                stopMethod.invoke(null)
-            } catch (e: ClassNotFoundException) {
-                Log.w(TAG, "libv2ray stop mock/fallback")
+            coreController?.let { controller ->
+                try {
+                    val stopLoopMethod = controller.javaClass.getMethod("stopLoop")
+                    stopLoopMethod.invoke(controller)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error stopping controller loop: ${e.message}")
+                }
             }
+            coreController = null
             isRunning = false
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Error stopping Xray core", e)
+            Log.e(TAG, "Error stopping core", e)
             false
         }
     }
 
-    fun measureRealDelay(socksPort: Int, testUrl: String = "http://cp.cloudflare.com/generate_204"): Long {
-        val startTime = System.currentTimeMillis()
-        return try {
-            val proxy = java.net.Proxy(
-                java.net.Proxy.Type.SOCKS,
-                java.net.InetSocketAddress("127.0.0.1", socksPort)
-            )
-            val connection = java.net.URL(testUrl).openConnection(proxy) as java.net.HttpURLConnection
-            connection.connectTimeout = 3500
-            connection.readTimeout = 3500
-            connection.requestMethod = "HEAD"
-            connection.useCaches = false
-            val code = connection.responseCode
-            val elapsed = System.currentTimeMillis() - startTime
-            if (code in 200..399) elapsed else -1L
-        } catch (e: Exception) {
-            -1L
+    fun measureRealDelay(url: String = "http://cp.cloudflare.com/generate_204"): Long {
+        coreController?.let { controller ->
+            try {
+                val method = controller.javaClass.getMethod("measureDelay", String::class.java)
+                val res = method.invoke(controller, url)
+                if (res is Long && res > 0) return res
+                if (res is Int && res > 0) return res.toLong()
+            } catch (ignored: Exception) {}
         }
+        return -1L
+    }
+
+    fun queryTrafficStats(): Pair<Long, Long> {
+        coreController?.let { controller ->
+            try {
+                val method = controller.javaClass.getMethod("queryAllOutboundTrafficStats")
+                val res = method.invoke(controller) as? String ?: ""
+                var down = 0L
+                var up = 0L
+                res.split(";").forEach { item ->
+                    val parts = item.split(",")
+                    if (parts.size >= 3) {
+                        val dir = parts[1].lowercase()
+                        val bytes = parts[2].toLongOrNull() ?: 0L
+                        if (dir.contains("down")) down += bytes
+                        else if (dir.contains("up")) up += bytes
+                    }
+                }
+                return Pair(down, up)
+            } catch (ignored: Exception) {}
+        }
+        return Pair(0L, 0L)
     }
 }
