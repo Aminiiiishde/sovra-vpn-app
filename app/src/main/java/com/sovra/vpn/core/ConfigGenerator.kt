@@ -6,29 +6,37 @@ import java.net.URLDecoder
 
 object ConfigGenerator {
 
-    fun generateFromUri(uri: String): String {
+    fun generateFromUri(uri: String, cleanIp: String = ""): String {
         return try {
             if (uri.startsWith("vless://")) {
-                parseVless(uri)
+                parseVless(uri, cleanIp)
             } else if (uri.startsWith("trojan://")) {
-                parseTrojan(uri)
+                parseTrojan(uri, cleanIp)
             } else if (uri.startsWith("vmess://")) {
-                parseVmess(uri)
+                parseVmess(uri, cleanIp)
             } else {
-                generateXrayConfig(serverAddress = "77.90.52.130", serverPort = 2052, uuid = "0ded6ec5-3bff-4653-b404-a842765ccdcd")
+                generateXrayConfig(
+                    serverAddress = cleanIp.ifEmpty { "77.90.52.130" },
+                    serverPort = 2052,
+                    uuid = "0ded6ec5-3bff-4653-b404-a842765ccdcd"
+                )
             }
         } catch (e: Exception) {
-            generateXrayConfig(serverAddress = "77.90.52.130", serverPort = 2052, uuid = "0ded6ec5-3bff-4653-b404-a842765ccdcd")
+            generateXrayConfig(
+                serverAddress = cleanIp.ifEmpty { "77.90.52.130" },
+                serverPort = 2052,
+                uuid = "0ded6ec5-3bff-4653-b404-a842765ccdcd"
+            )
         }
     }
 
-    private fun parseVless(uri: String): String {
+    private fun parseVless(uri: String, cleanIp: String): String {
         val clean = uri.removePrefix("vless://").split("#")[0]
         val parts = clean.split("@")
         val uuid = parts[0]
         val hostPortAndQuery = parts[1].split("?")
         val hostPort = hostPortAndQuery[0].split(":")
-        val address = hostPort[0]
+        val rawAddress = hostPort[0]
         val port = hostPort[1].toInt()
         val queryMap = mutableMapOf<String, String>()
         if (hostPortAndQuery.size > 1) {
@@ -41,17 +49,20 @@ object ConfigGenerator {
         val security = queryMap["security"] ?: "none"
         val path = queryMap["path"] ?: ""
         val host = queryMap["host"] ?: ""
-        val sni = queryMap["sni"] ?: host
+        val sni = queryMap["sni"] ?: (if (host.isNotEmpty()) host else rawAddress)
         val pbk = queryMap["pbk"] ?: ""
         val sid = queryMap["sid"] ?: ""
+
+        val finalAddress = if (cleanIp.isNotEmpty() && (host.isNotEmpty() || sni.isNotEmpty())) cleanIp else rawAddress
+
         return generateXrayConfig(
             protocol = "vless",
-            serverAddress = address,
+            serverAddress = finalAddress,
             serverPort = port,
             uuid = uuid,
             transport = type,
             path = path,
-            host = host,
+            host = host.ifEmpty { rawAddress },
             security = security,
             sni = sni,
             publicKey = pbk,
@@ -59,13 +70,13 @@ object ConfigGenerator {
         )
     }
 
-    private fun parseTrojan(uri: String): String {
+    private fun parseTrojan(uri: String, cleanIp: String): String {
         val clean = uri.removePrefix("trojan://").split("#")[0]
         val parts = clean.split("@")
         val password = parts[0]
         val hostPortAndQuery = parts[1].split("?")
         val hostPort = hostPortAndQuery[0].split(":")
-        val address = hostPort[0]
+        val rawAddress = hostPort[0]
         val port = hostPort[1].toInt()
         val queryMap = mutableMapOf<String, String>()
         if (hostPortAndQuery.size > 1) {
@@ -76,10 +87,13 @@ object ConfigGenerator {
         }
         val type = queryMap["type"] ?: "tcp"
         val security = queryMap["security"] ?: "tls"
-        val sni = queryMap["sni"] ?: address
+        val sni = queryMap["sni"] ?: rawAddress
+
+        val finalAddress = if (cleanIp.isNotEmpty()) cleanIp else rawAddress
+
         return generateXrayConfig(
             protocol = "trojan",
-            serverAddress = address,
+            serverAddress = finalAddress,
             serverPort = port,
             uuid = password,
             transport = type,
@@ -88,20 +102,26 @@ object ConfigGenerator {
         )
     }
 
-    private fun parseVmess(uri: String): String {
+    private fun parseVmess(uri: String, cleanIp: String): String {
         val b64 = uri.removePrefix("vmess://")
         val jsonStr = String(android.util.Base64.decode(b64, android.util.Base64.DEFAULT))
         val obj = JSONObject(jsonStr)
+        val rawAddress = obj.optString("add", "77.90.52.130")
+        val host = obj.optString("host", "")
+        val sni = obj.optString("sni", "")
+
+        val finalAddress = if (cleanIp.isNotEmpty() && (host.isNotEmpty() || sni.isNotEmpty())) cleanIp else rawAddress
+
         return generateXrayConfig(
             protocol = "vmess",
-            serverAddress = obj.optString("add", "77.90.52.130"),
+            serverAddress = finalAddress,
             serverPort = obj.optInt("port", 443),
             uuid = obj.optString("id", "0ded6ec5-3bff-4653-b404-a842765ccdcd"),
             transport = obj.optString("net", "ws"),
             path = obj.optString("path", "/"),
-            host = obj.optString("host", ""),
+            host = host.ifEmpty { rawAddress },
             security = obj.optString("tls", "tls"),
-            sni = obj.optString("sni", "")
+            sni = sni.ifEmpty { host.ifEmpty { rawAddress } }
         )
     }
 
@@ -121,8 +141,36 @@ object ConfigGenerator {
     ): String {
         val root = JSONObject()
 
-        // 1. Inbounds: Socks5 for tun2socks / internal app routing
+        // 1. Logs & Policy
+        val log = JSONObject().apply {
+            put("loglevel", "warning")
+        }
+        root.put("log", log)
+
+        val policy = JSONObject().apply {
+            val levels = JSONObject().apply {
+                val lvl8 = JSONObject().apply {
+                    put("handshake", 4)
+                    put("connIdle", 300)
+                    put("uplinkOnly", 1)
+                    put("downlinkOnly", 1)
+                }
+                put("8", lvl8)
+            }
+            put("levels", levels)
+            val system = JSONObject().apply {
+                put("statsOutboundUplink", true)
+                put("statsOutboundDownlink", true)
+            }
+            put("system", system)
+        }
+        root.put("policy", policy)
+        root.put("stats", JSONObject())
+
+        // 2. Inbounds: socks-in AND real TUN inbound
         val inbounds = JSONArray()
+
+        // Inbound 1: Socks5
         val socksInbound = JSONObject().apply {
             put("tag", "socks-in")
             put("port", socksPort)
@@ -131,16 +179,41 @@ object ConfigGenerator {
             put("settings", JSONObject().apply {
                 put("auth", "noauth")
                 put("udp", true)
+                put("userLevel", 8)
             })
             put("sniffing", JSONObject().apply {
                 put("enabled", true)
-                put("destOverride", JSONArray().apply { put("http"); put("tls") })
+                put("destOverride", JSONArray().apply {
+                    put("http")
+                    put("tls")
+                    put("quic")
+                })
             })
         }
         inbounds.put(socksInbound)
+
+        // Inbound 2: Real TUN inbound for Android VPN
+        val tunInbound = JSONObject().apply {
+            put("tag", "tun")
+            put("protocol", "tun")
+            put("settings", JSONObject().apply {
+                put("name", "xray0")
+                put("MTU", 1500)
+                put("userLevel", 8)
+            })
+            put("sniffing", JSONObject().apply {
+                put("enabled", true)
+                put("destOverride", JSONArray().apply {
+                    put("http")
+                    put("tls")
+                    put("quic")
+                })
+            })
+        }
+        inbounds.put(tunInbound)
         root.put("inbounds", inbounds)
 
-        // 2. Outbounds
+        // 3. Outbounds
         val outbounds = JSONArray()
         val mainOutbound = JSONObject().apply {
             put("tag", "proxy")
@@ -176,7 +249,7 @@ object ConfigGenerator {
             val streamSettings = JSONObject().apply {
                 put("network", transport)
                 put("security", security)
-                
+
                 if (transport == "ws") {
                     put("wsSettings", JSONObject().apply {
                         put("path", path.ifEmpty { "/" })
@@ -188,7 +261,7 @@ object ConfigGenerator {
 
                 if (security == "tls") {
                     put("tlsSettings", JSONObject().apply {
-                        put("serverName", sni.ifEmpty { serverAddress })
+                        put("serverName", sni.ifEmpty { host.ifEmpty { serverAddress } })
                         put("allowInsecure", true)
                     })
                 } else if (security == "reality") {
@@ -212,16 +285,44 @@ object ConfigGenerator {
         }
         outbounds.put(directOutbound)
 
-        // DNS configuration
+        // Block outbound
+        val blockOutbound = JSONObject().apply {
+            put("tag", "block")
+            put("protocol", "blackhole")
+            put("settings", JSONObject().apply {
+                put("response", JSONObject().apply { put("type", "http") })
+            })
+        }
+        outbounds.put(blockOutbound)
+        root.put("outbounds", outbounds)
+
+        // 4. Routing: Inbounds ["tun", "socks-in"] -> Outbound "proxy"
+        val routing = JSONObject().apply {
+            put("domainStrategy", "AsIs")
+            val rules = JSONArray().apply {
+                val r1 = JSONObject().apply {
+                    put("type", "field")
+                    put("inboundTag", JSONArray().apply {
+                        put("tun")
+                        put("socks-in")
+                    })
+                    put("outboundTag", "proxy")
+                }
+                put(r1)
+            }
+            put("rules", rules)
+        }
+        root.put("routing", routing)
+
+        // 5. DNS configuration
         val dns = JSONObject().apply {
             put("servers", JSONArray().apply {
-                put("https+local://1.1.1.1/dns-query")
+                put("1.1.1.1")
                 put("8.8.8.8")
                 put("localhost")
             })
         }
         root.put("dns", dns)
-        root.put("outbounds", outbounds)
 
         return root.toString(2)
     }
