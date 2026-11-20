@@ -41,7 +41,7 @@ object XrayBridge {
                 isRunning = true
                 return true
             } catch (e: ClassNotFoundException) {
-                Log.w(TAG, "libv2ray.Libv2ray not in classpath, fallback mode active")
+                Log.w(TAG, "libv2ray.Libv2ray not in classpath, running in simulated mode")
                 isRunning = true
                 return true
             } catch (e: Exception) {
@@ -76,16 +76,18 @@ object XrayBridge {
         }
     }
 
-    fun measureRealDelay(url: String = "http://cp.cloudflare.com/generate_204"): Long {
-        coreController?.let { controller ->
-            try {
-                val method = controller.javaClass.getMethod("measureDelay", String::class.java)
-                val res = method.invoke(controller, url)
-                if (res is Long && res > 0) return res
-                if (res is Int && res > 0) return res.toLong()
-            } catch (ignored: Exception) {}
+    fun measureOutboundDelay(configJson: String, testUrl: String = "http://cp.cloudflare.com/generate_204"): Long {
+        return try {
+            val libClass = Class.forName("libv2ray.Libv2ray")
+            val method = libClass.getMethod("measureOutboundDelay", String::class.java, String::class.java)
+            val res = method.invoke(null, configJson, testUrl)
+            if (res is Long && res > 0) return res
+            if (res is Int && res > 0) return res.toLong()
+            -1L
+        } catch (e: Exception) {
+            Log.w(TAG, "Native measureOutboundDelay failed: ${e.message}")
+            -1L
         }
-        return -1L
     }
 
     fun queryTrafficStats(): Pair<Long, Long> {
