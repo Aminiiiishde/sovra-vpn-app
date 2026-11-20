@@ -58,18 +58,8 @@ class SovraVpnService : VpnService() {
 
             val pfd = builder.establish()
             vpnInterface = pfd
-            
-            var tunFd = 0
-            try {
-                pfd?.fileDescriptor?.let { fdObj ->
-                    val field = fdObj.javaClass.getDeclaredField("descriptor")
-                    field.isAccessible = true
-                    tunFd = field.getInt(fdObj)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not extract raw fd: ${e.message}")
-            }
 
+            val tunFd = pfd?.fd ?: 0
             Log.d(TAG, "VPN tunnel established with tunFd=$tunFd")
             XrayBridge.startCore(configJson, tunFd)
 
