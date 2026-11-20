@@ -2,6 +2,7 @@ package com.sovra.vpn.core
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.TrafficStats
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.util.Log
@@ -47,13 +48,31 @@ class SovraVpnService : VpnService() {
                 addRoute("0.0.0.0", 0)
                 addDnsServer("1.1.1.1")
                 addDnsServer("8.8.8.8")
+                try {
+                    addDisallowedApplication(packageName)
+                } catch (e: Exception) {
+                    Log.w(TAG, "addDisallowedApplication failed: ${e.message}")
+                }
                 setBlocking(true)
             }
 
-            vpnInterface = builder.establish()
-            XrayBridge.startCore(configJson)
+            val pfd = builder.establish()
+            vpnInterface = pfd
+            
+            var tunFd = 0
+            try {
+                pfd?.fileDescriptor?.let { fdObj ->
+                    val field = fdObj.javaClass.getDeclaredField("descriptor")
+                    field.isAccessible = true
+                    tunFd = field.getInt(fdObj)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not extract raw fd: ${e.message}")
+            }
 
-            // Start live status notification ticker
+            Log.d(TAG, "VPN tunnel established with tunFd=$tunFd")
+            XrayBridge.startCore(configJson, tunFd)
+
             startLiveNotificationTicker()
 
         } catch (e: Exception) {
@@ -65,13 +84,36 @@ class SovraVpnService : VpnService() {
     private fun startLiveNotificationTicker() {
         tickerJob?.cancel()
         tickerJob = scope.launch {
-            var counter = 0
+            var lastRx = TrafficStats.getTotalRxBytes()
+            var lastTx = TrafficStats.getTotalTxBytes()
+            var lastTime = System.currentTimeMillis()
+
             while (isActive) {
-                val downSpeed = String.format("%.1f", 2.4 + (counter % 5) * 0.7)
-                val upSpeed = String.format("%.1f", 0.8 + (counter % 3) * 0.3)
-                showNotification("⚡ SOVRA VIP تانل متصل است | ↓ $downSpeed MB/s  ↑ $upSpeed MB/s")
-                delay(3000)
-                counter++
+                delay(2000)
+                val nowTime = System.currentTimeMillis()
+                val currentRx = TrafficStats.getTotalRxBytes()
+                val currentTx = TrafficStats.getTotalTxBytes()
+                val dt = (nowTime - lastTime) / 1000.0
+
+                var rxSpeed = if (dt > 0 && currentRx >= lastRx) ((currentRx - lastRx) / dt) / (1024 * 1024) else 0.0
+                var txSpeed = if (dt > 0 && currentTx >= lastTx) ((currentTx - lastTx) / dt) / (1024 * 1024) else 0.0
+
+                val (xDown, xUp) = XrayBridge.queryTrafficStats()
+                if (xDown > 0 && dt > 0) rxSpeed = (xDown / dt) / (1024 * 1024)
+                if (xUp > 0 && dt > 0) txSpeed = (xUp / dt) / (1024 * 1024)
+
+                lastRx = currentRx
+                lastTx = currentTx
+                lastTime = nowTime
+
+                val downStr = String.format("%.2f MB/s", rxSpeed)
+                val upStr = String.format("%.2f MB/s", txSpeed)
+                showNotification("⚡ SOVRA متصل است | دانلود: $downStr | آپلود: $upStr")
+
+                withContext(Dispatchers.Main) {
+                    val js = "if(typeof updateRealSpeed === 'function') updateRealSpeed('${downStr}', '${upStr}');"
+                    MainActivity.instance?.getWebView()?.evaluateJavascript(js, null)
+                }
             }
         }
     }
