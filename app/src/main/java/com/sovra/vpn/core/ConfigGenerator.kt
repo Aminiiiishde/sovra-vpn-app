@@ -52,13 +52,12 @@ object ConfigGenerator {
         root.put("policy", policy)
         root.put("stats", JSONObject())
 
-        // 3. Inbounds: socks (local port 10808) AND tun (xray0)
+        // 3. Inbounds: socks (local port 10808) AND tun (xray0) matching official v2rayNG / V2Box
         val inbounds = JSONArray()
 
         val socksInbound = JSONObject().apply {
             put("tag", "socks")
             put("port", 10808)
-            put("listen", "127.0.0.1")
             put("protocol", "socks")
             put("settings", JSONObject().apply {
                 put("auth", "noauth")
@@ -119,7 +118,7 @@ object ConfigGenerator {
         }
         outbounds.put(directOutbound)
 
-        // 4.3 Block outbound for ad/malware
+        // 4.3 Block outbound
         val blockOutbound = JSONObject().apply {
             put("tag", "block")
             put("protocol", "blackhole")
@@ -130,12 +129,11 @@ object ConfigGenerator {
         outbounds.put(blockOutbound)
         root.put("outbounds", outbounds)
 
-        // 5. Routing: Direct LAN private IPs, all other traffic flows through proxy
+        // 5. Routing: Direct private LAN IPs, all other traffic flows through proxy
         val routing = JSONObject().apply {
             put("domainStrategy", "AsIs")
             val rules = JSONArray()
 
-            // Direct private IPs (LAN bypass)
             rules.put(JSONObject().apply {
                 put("type", "field")
                 put("outboundTag", "direct")
@@ -159,6 +157,7 @@ object ConfigGenerator {
             clean.startsWith("vless://") -> parseVless(clean, cleanIp)
             clean.startsWith("vmess://") -> parseVmess(clean, cleanIp)
             clean.startsWith("trojan://") -> parseTrojan(clean, cleanIp)
+            clean.startsWith("ss://") -> parseShadowsocks(clean, cleanIp)
             else -> throw IllegalArgumentException("Unsupported protocol: $clean")
         }
     }
@@ -296,6 +295,64 @@ object ConfigGenerator {
             fingerprint = fp,
             alpn = alpn
         )
+    }
+
+    private fun parseShadowsocks(uri: String, cleanIp: String = ""): JSONObject {
+        val raw = uri.removePrefix("ss://")
+        val mainPart = raw.split("#")[0].split("?")[0]
+
+        var method = "chacha20-ietf-poly1305"
+        var password = ""
+        var host = ""
+        var port = 8388
+
+        try {
+            if (mainPart.contains("@")) {
+                val atParts = mainPart.split("@")
+                val userInfo = try {
+                    String(Base64.decode(atParts[0], Base64.DEFAULT or Base64.NO_WRAP))
+                } catch (_: Exception) {
+                    atParts[0]
+                }
+                val up = userInfo.split(":")
+                method = up[0]
+                password = if (up.size > 1) up[1] else ""
+                val hp = atParts[1].split(":")
+                host = hp[0]
+                port = hp[1].toInt()
+            } else {
+                val decoded = String(Base64.decode(mainPart, Base64.DEFAULT or Base64.NO_WRAP))
+                val atParts = decoded.split("@")
+                val up = atParts[0].split(":")
+                method = up[0]
+                password = if (up.size > 1) up[1] else ""
+                val hp = atParts[1].split(":")
+                host = hp[0]
+                port = hp[1].toInt()
+            }
+        } catch (_: Exception) {}
+
+        val serverAddress = if (cleanIp.isNotEmpty()) cleanIp else host
+
+        val outbound = JSONObject()
+        outbound.put("tag", "proxy")
+        outbound.put("protocol", "shadowsocks")
+        val settings = JSONObject().apply {
+            val servers = JSONArray()
+            servers.put(JSONObject().apply {
+                put("address", serverAddress)
+                put("port", port)
+                put("method", method)
+                put("password", password)
+                put("level", 8)
+            })
+            put("servers", servers)
+        }
+        outbound.put("settings", settings)
+        outbound.put("streamSettings", JSONObject().apply {
+            put("network", "tcp")
+        })
+        return outbound
     }
 
     private fun buildOutboundJson(
