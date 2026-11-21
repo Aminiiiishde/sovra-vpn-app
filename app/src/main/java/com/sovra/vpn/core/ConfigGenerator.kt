@@ -129,12 +129,10 @@ object ConfigGenerator {
         }
         root.put("routing", routing)
 
-        // 6. DNS
+        // 6. DNS (matching v2rayNG v2ray_config_with_tun.json)
         val dns = JSONObject().apply {
-            put("servers", JSONArray().apply {
-                put("1.1.1.1")
-                put("8.8.8.8")
-            })
+            put("hosts", JSONObject())
+            put("servers", JSONArray())
         }
         root.put("dns", dns)
 
@@ -160,12 +158,12 @@ object ConfigGenerator {
         return buildOutboundObject(
             protocol = "vless",
             serverAddress = cleanIp.ifEmpty { "tun.sovra.ir" },
-            serverPort = 2052,
+            serverPort = 7822,
             uuid = "741fc821-4acb-4b77-9c37-8862308db928",
-            transport = "ws",
-            path = "/german",
+            transport = "httpupgrade",
+            path = "/videogames/v2/sk",
             host = "german.sovra.ir",
-            security = "none",
+            security = "tls",
             sni = "german.sovra.ir"
         )
     }
@@ -188,7 +186,7 @@ object ConfigGenerator {
         }
 
         val type = queryMap["type"] ?: "tcp"
-        val security = queryMap["security"] ?: "none"
+        var security = queryMap["security"] ?: "none"
         val path = queryMap["path"] ?: "/"
         val host = queryMap["host"] ?: ""
         val sni = queryMap["sni"] ?: (if (host.isNotEmpty()) host else rawAddress)
@@ -201,6 +199,13 @@ object ConfigGenerator {
         val encryption = queryMap["encryption"] ?: "none"
         val serviceName = queryMap["serviceName"] ?: path
         val mode = queryMap["mode"] ?: "auto"
+
+        // Xray v26 safety: If security is none but encryption is none, auto upgrade to TLS if sni or port suggests
+        if (security == "none" && encryption == "none") {
+            if (port == 443 || port == 8443 || port == 2053 || port == 2083 || port == 2087 || port == 2096 || sni.isNotEmpty()) {
+                security = "tls"
+            }
+        }
 
         val finalAddress = if (cleanIp.isNotEmpty() && (host.isNotEmpty() || sni.isNotEmpty())) cleanIp else rawAddress
 
