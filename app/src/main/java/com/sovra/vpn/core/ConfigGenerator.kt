@@ -96,23 +96,13 @@ object ConfigGenerator {
         inbounds.put(tunInbound)
         root.put("inbounds", inbounds)
 
-        // 4. Outbounds: proxy, dns-out, direct, block
+        // 4. Outbounds: proxy (1st priority), direct, block
         val outbounds = JSONArray()
 
         // 4.1 Proxy outbound (1st priority)
         outbounds.put(generateProxyOutbound(uri, cleanIp))
 
-        // 4.2 DNS Outbound (CRITICAL: intercepts port 53 and resolves via encrypted proxy)
-        val dnsOutbound = JSONObject().apply {
-            put("tag", "dns-out")
-            put("protocol", "dns")
-            put("settings", JSONObject().apply {
-                put("network", "tcp")
-            })
-        }
-        outbounds.put(dnsOutbound)
-
-        // 4.3 Direct outbound for LAN & direct bypass
+        // 4.2 Direct outbound for LAN & direct bypass
         val directOutbound = JSONObject().apply {
             put("tag", "direct")
             put("protocol", "freedom")
@@ -129,7 +119,7 @@ object ConfigGenerator {
         }
         outbounds.put(directOutbound)
 
-        // 4.4 Block outbound for ad/malware
+        // 4.3 Block outbound for ad/malware
         val blockOutbound = JSONObject().apply {
             put("tag", "block")
             put("protocol", "blackhole")
@@ -140,134 +130,87 @@ object ConfigGenerator {
         outbounds.put(blockOutbound)
         root.put("outbounds", outbounds)
 
-        // 5. Routing: Send port 53 to dns-out, private IP to direct, all other to proxy
+        // 5. Routing: Direct LAN private IPs, all other traffic flows through proxy
         val routing = JSONObject().apply {
-            put("domainStrategy", "IPIfNonMatch")
+            put("domainStrategy", "AsIs")
             val rules = JSONArray()
 
-            // DNS rule: Route port 53 from tun and socks to dns-out
-            val dnsRule = JSONObject().apply {
-                put("type", "field")
-                put("inboundTag", JSONArray().apply {
-                    put("tun")
-                    put("socks")
-                })
-                put("outboundTag", "dns-out")
-                put("port", "53")
-            }
-            rules.put(dnsRule)
-
-            // Private network bypass
-            val privateRule = JSONObject().apply {
+            // Direct private IPs (LAN bypass)
+            rules.put(JSONObject().apply {
                 put("type", "field")
                 put("outboundTag", "direct")
                 put("ip", JSONArray().apply {
-                    put("geoip:private")
+                    put("10.0.0.0/8")
+                    put("172.16.0.0/12")
+                    put("192.168.0.0/16")
+                    put("127.0.0.0/8")
                 })
-            }
-            rules.put(privateRule)
-
+            })
             put("rules", rules)
         }
         root.put("routing", routing)
 
-        // 6. DNS: Clean upstream DNS servers queried through the proxy
-        val dns = JSONObject().apply {
-            put("hosts", JSONObject())
-            val servers = JSONArray().apply {
-                put("1.1.1.1")
-                put("8.8.8.8")
-            }
-            put("servers", servers)
-        }
-        root.put("dns", dns)
-
         return root.toString(2)
     }
 
-    private fun generateProxyOutbound(uri: String, cleanIp: String): JSONObject {
-        return try {
-            val clean = uri.split("#")[0].trim()
-            when {
-                clean.startsWith("vless://") -> parseVlessOutbound(clean, cleanIp)
-                clean.startsWith("trojan://") -> parseTrojanOutbound(clean, cleanIp)
-                clean.startsWith("vmess://") -> parseVmessOutbound(clean, cleanIp)
-                clean.startsWith("ss://") -> parseSsOutbound(clean, cleanIp)
-                else -> defaultOutbound(cleanIp)
-            }
-        } catch (e: Exception) {
-            defaultOutbound(cleanIp)
+    private fun generateProxyOutbound(uri: String, cleanIp: String = ""): JSONObject {
+        val clean = uri.trim()
+        return when {
+            clean.startsWith("vless://") -> parseVless(clean, cleanIp)
+            clean.startsWith("vmess://") -> parseVmess(clean, cleanIp)
+            clean.startsWith("trojan://") -> parseTrojan(clean, cleanIp)
+            else -> throw IllegalArgumentException("Unsupported protocol: $clean")
         }
     }
 
-    private fun defaultOutbound(cleanIp: String): JSONObject {
-        return buildOutboundObject(
-            protocol = "vless",
-            serverAddress = cleanIp.ifEmpty { "tun.sovra.ir" },
-            serverPort = 7822,
-            uuid = "741fc821-4acb-4b77-9c37-8862308db928",
-            transport = "httpupgrade",
-            path = "/videogames/v2/sk",
-            host = "german.sovra.ir",
-            security = "tls",
-            sni = "german.sovra.ir"
-        )
-    }
-
-    private fun parseVlessOutbound(clean: String, cleanIp: String): JSONObject {
-        val body = clean.removePrefix("vless://")
-        val parts = body.split("@")
-        val uuid = parts[0]
-        val hp_q = parts[1].split("?", limit = 2)
-        val hostPort = hp_q[0].split(":")
+    private fun parseVless(uri: String, cleanIp: String = ""): JSONObject {
+        val raw = uri.removePrefix("vless://")
+        val mainPart = raw.split("#")[0]
+        val atSplit = mainPart.split("@")
+        val uuid = atSplit[0]
+        val hostAndQuery = atSplit[1].split("?")
+        val hostPort = hostAndQuery[0].split(":")
         val rawAddress = hostPort[0]
-        val port = hostPort[1].split("/")[0].toIntOrNull() ?: 443
+        val port = hostPort[1].toInt()
+
+        val serverAddress = if (cleanIp.isNotEmpty()) cleanIp else rawAddress
 
         val queryMap = mutableMapOf<String, String>()
-        if (hp_q.size > 1) {
-            hp_q[1].split("&").forEach { param ->
-                val kv = param.split("=", limit = 2)
-                if (kv.size == 2) queryMap[kv[0]] = try { URLDecoder.decode(kv[1], "UTF-8") } catch (_: Exception) { kv[1] }
+        if (hostAndQuery.size > 1) {
+            hostAndQuery[1].split("&").forEach {
+                val kv = it.split("=")
+                if (kv.size == 2) queryMap[kv[0]] = URLDecoder.decode(kv[1], "UTF-8")
             }
         }
 
-        val type = queryMap["type"] ?: "tcp"
-        var security = queryMap["security"] ?: "none"
+        val transport = queryMap["type"] ?: "tcp"
+        val security = queryMap["security"] ?: "none"
         val path = queryMap["path"] ?: "/"
         val host = queryMap["host"] ?: ""
-        val sni = queryMap["sni"] ?: (if (host.isNotEmpty()) host else rawAddress)
+        val sni = queryMap["sni"] ?: host
+        val fp = queryMap["fp"] ?: "chrome"
+        val alpn = queryMap["alpn"] ?: ""
         val pbk = queryMap["pbk"] ?: ""
         val sid = queryMap["sid"] ?: ""
         val spx = queryMap["spx"] ?: ""
-        val fp = queryMap["fp"] ?: "chrome"
-        val alpn = queryMap["alpn"] ?: ""
         val flow = queryMap["flow"] ?: ""
         val encryption = queryMap["encryption"] ?: "none"
-        val serviceName = queryMap["serviceName"] ?: path
+        val serviceName = queryMap["serviceName"] ?: ""
         val mode = queryMap["mode"] ?: "auto"
 
-        // Xray v26 safety: Auto upgrade to TLS if sni/port suggests
-        if (security == "none" && encryption == "none") {
-            if (port == 443 || port == 8443 || port == 2053 || port == 2083 || port == 2087 || port == 2096 || sni.isNotEmpty()) {
-                security = "tls"
-            }
-        }
-
-        val finalAddress = if (cleanIp.isNotEmpty() && (host.isNotEmpty() || sni.isNotEmpty())) cleanIp else rawAddress
-
-        return buildOutboundObject(
+        return buildOutboundJson(
             protocol = "vless",
-            serverAddress = finalAddress,
+            serverAddress = serverAddress,
             serverPort = port,
             uuid = uuid,
-            transport = type,
-            path = path,
-            host = host.ifEmpty { rawAddress },
+            transport = transport,
             security = security,
-            sni = sni,
+            path = path,
+            host = host,
             publicKey = pbk,
             shortId = sid,
             spiderX = spx,
+            sni = sni,
             fingerprint = fp,
             alpn = alpn,
             flow = flow,
@@ -277,137 +220,93 @@ object ConfigGenerator {
         )
     }
 
-    private fun parseTrojanOutbound(clean: String, cleanIp: String): JSONObject {
-        val body = clean.removePrefix("trojan://")
-        val parts = body.split("@")
-        val password = parts[0]
-        val hp_q = parts[1].split("?", limit = 2)
-        val hostPort = hp_q[0].split(":")
-        val rawAddress = hostPort[0]
-        val port = hostPort[1].split("/")[0].toIntOrNull() ?: 443
+    private fun parseVmess(uri: String, cleanIp: String = ""): JSONObject {
+        val raw = uri.removePrefix("vmess://")
+        val decoded = String(Base64.decode(raw, Base64.DEFAULT), Charsets.UTF_8)
+        val json = JSONObject(decoded)
 
-        val queryMap = mutableMapOf<String, String>()
-        if (hp_q.size > 1) {
-            hp_q[1].split("&").forEach { param ->
-                val kv = param.split("=", limit = 2)
-                if (kv.size == 2) queryMap[kv[0]] = try { URLDecoder.decode(kv[1], "UTF-8") } catch (_: Exception) { kv[1] }
-            }
-        }
+        val rawAddress = json.optString("add", "")
+        val port = json.optInt("port", 443)
+        val uuid = json.optString("id", "")
+        val aid = json.optInt("aid", 0)
+        val transport = json.optString("net", "tcp")
+        val security = json.optString("tls", "none")
+        val path = json.optString("path", "/")
+        val host = json.optString("host", "")
+        val sni = json.optString("sni", host)
+        val alpn = json.optString("alpn", "")
+        val fp = json.optString("fp", "chrome")
+        val type = json.optString("type", "none")
 
-        val type = queryMap["type"] ?: "tcp"
-        val security = queryMap["security"] ?: "tls"
-        val host = queryMap["host"] ?: ""
-        val sni = queryMap["sni"] ?: (if (host.isNotEmpty()) host else rawAddress)
-        val path = queryMap["path"] ?: "/"
-        val fp = queryMap["fp"] ?: "chrome"
-        val alpn = queryMap["alpn"] ?: ""
+        val serverAddress = if (cleanIp.isNotEmpty()) cleanIp else rawAddress
 
-        val finalAddress = if (cleanIp.isNotEmpty() && (host.isNotEmpty() || sni.isNotEmpty())) cleanIp else rawAddress
-
-        return buildOutboundObject(
-            protocol = "trojan",
-            serverAddress = finalAddress,
+        return buildOutboundJson(
+            protocol = "vmess",
+            serverAddress = serverAddress,
             serverPort = port,
-            uuid = password,
-            transport = type,
+            uuid = uuid,
+            transport = transport,
+            security = if (security == "tls") "tls" else "none",
             path = path,
-            host = host.ifEmpty { rawAddress },
-            security = security,
+            host = host,
             sni = sni,
             fingerprint = fp,
             alpn = alpn
         )
     }
 
-    private fun parseVmessOutbound(clean: String, cleanIp: String): JSONObject {
-        val b64 = clean.removePrefix("vmess://")
-        val pad = (4 - b64.length % 4) % 4
-        val paddedB64 = b64 + "=".repeat(pad)
-        val jsonStr = String(Base64.decode(paddedB64, Base64.DEFAULT))
-        val obj = JSONObject(jsonStr)
+    private fun parseTrojan(uri: String, cleanIp: String = ""): JSONObject {
+        val raw = uri.removePrefix("trojan://")
+        val mainPart = raw.split("#")[0]
+        val atSplit = mainPart.split("@")
+        val password = atSplit[0]
+        val hostAndQuery = atSplit[1].split("?")
+        val hostPort = hostAndQuery[0].split(":")
+        val rawAddress = hostPort[0]
+        val port = hostPort[1].toInt()
 
-        val rawAddress = obj.optString("add", "tun.sovra.ir")
-        val portStr = obj.optString("port", "443").split("/")[0]
-        val port = portStr.toIntOrNull() ?: 443
-        val uuid = obj.optString("id", "")
-        val net = obj.optString("net", "ws")
-        val host = obj.optString("host", "")
-        val path = obj.optString("path", "/")
-        val tls = obj.optString("tls", "none")
-        val sni = obj.optString("sni", if (host.isNotEmpty()) host else rawAddress)
+        val serverAddress = if (cleanIp.isNotEmpty()) cleanIp else rawAddress
 
-        val finalAddress = if (cleanIp.isNotEmpty() && (host.isNotEmpty() || sni.isNotEmpty())) cleanIp else rawAddress
+        val queryMap = mutableMapOf<String, String>()
+        if (hostAndQuery.size > 1) {
+            hostAndQuery[1].split("&").forEach {
+                val kv = it.split("=")
+                if (kv.size == 2) queryMap[kv[0]] = URLDecoder.decode(kv[1], "UTF-8")
+            }
+        }
 
-        return buildOutboundObject(
-            protocol = "vmess",
-            serverAddress = finalAddress,
+        val transport = queryMap["type"] ?: "tcp"
+        val security = queryMap["security"] ?: "tls"
+        val path = queryMap["path"] ?: "/"
+        val host = queryMap["host"] ?: ""
+        val sni = queryMap["sni"] ?: host
+        val fp = queryMap["fp"] ?: "chrome"
+        val alpn = queryMap["alpn"] ?: ""
+
+        return buildOutboundJson(
+            protocol = "trojan",
+            serverAddress = serverAddress,
             serverPort = port,
-            uuid = uuid,
-            transport = net,
+            uuid = password,
+            transport = transport,
+            security = security,
             path = path,
-            host = host.ifEmpty { rawAddress },
-            security = tls,
-            sni = sni
+            host = host,
+            sni = sni,
+            fingerprint = fp,
+            alpn = alpn
         )
     }
 
-    private fun parseSsOutbound(clean: String, cleanIp: String): JSONObject {
-        val body = clean.removePrefix("ss://")
-        val userHost: String
-        val hostPort: String
-        if (body.contains("@")) {
-            val parts = body.split("@", limit = 2)
-            val pad = (4 - parts[0].length % 4) % 4
-            val userPass = String(Base64.decode(parts[0] + "=".repeat(pad), Base64.DEFAULT))
-            userHost = userPass
-            hostPort = parts[1]
-        } else {
-            val pad = (4 - body.length % 4) % 4
-            val decoded = String(Base64.decode(body + "=".repeat(pad), Base64.DEFAULT))
-            val parts = decoded.split("@", limit = 2)
-            userHost = parts[0]
-            hostPort = parts[1]
-        }
-
-        val upParts = userHost.split(":", limit = 2)
-        val method = upParts[0]
-        val password = if (upParts.size > 1) upParts[1] else ""
-
-        val hp = hostPort.split("?")[0].split(":")
-        val rawAddress = hp[0]
-        val port = hp[1].split("/")[0].toIntOrNull() ?: 8388
-
-        val outbound = JSONObject().apply {
-            put("tag", "proxy")
-            put("protocol", "shadowsocks")
-            put("settings", JSONObject().apply {
-                val servers = JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("address", rawAddress)
-                        put("port", port)
-                        put("method", method)
-                        put("password", password)
-                        put("level", 8)
-                    })
-                }
-                put("servers", servers)
-            })
-            put("streamSettings", JSONObject().apply {
-                put("network", "tcp")
-            })
-        }
-        return outbound
-    }
-
-    private fun buildOutboundObject(
+    private fun buildOutboundJson(
         protocol: String,
         serverAddress: String,
         serverPort: Int,
         uuid: String,
-        transport: String = "ws",
+        transport: String = "tcp",
+        security: String = "none",
         path: String = "/",
         host: String = "",
-        security: String = "none",
         publicKey: String = "",
         shortId: String = "",
         spiderX: String = "",
@@ -472,6 +371,7 @@ object ConfigGenerator {
                 streamSettings.put("wsSettings", JSONObject().apply {
                     put("path", path.ifEmpty { "/" })
                     if (host.isNotEmpty()) {
+                        put("host", host)
                         val headers = JSONObject()
                         headers.put("Host", host)
                         put("headers", headers)
