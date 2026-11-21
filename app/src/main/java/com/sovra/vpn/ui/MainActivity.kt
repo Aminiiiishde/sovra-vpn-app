@@ -16,7 +16,7 @@ import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.sovra.vpn.core.ConfigGenerator
 import com.sovra.vpn.core.SovraVpnService
@@ -43,7 +43,7 @@ data class ServerItem(
     val link: String
 )
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
