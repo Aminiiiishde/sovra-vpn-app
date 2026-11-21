@@ -44,7 +44,7 @@ class SovraVpnService : VpnService() {
             val builder = Builder().apply {
                 setSession("SOVRA VPN VIP")
                 setMtu(1500)
-                addAddress("26.26.26.1", 24)
+                addAddress("172.19.0.1", 30)
                 addRoute("0.0.0.0", 0)
                 addDnsServer("1.1.1.1")
                 addDnsServer("8.8.8.8")
@@ -53,7 +53,6 @@ class SovraVpnService : VpnService() {
                 } catch (e: Exception) {
                     Log.w(TAG, "addDisallowedApplication failed: ${e.message}")
                 }
-                setBlocking(true)
             }
 
             val pfd = builder.establish()
@@ -61,7 +60,10 @@ class SovraVpnService : VpnService() {
 
             val tunFd = pfd?.fd ?: 0
             Log.d(TAG, "VPN tunnel established with tunFd=$tunFd")
-            XrayBridge.startCore(configJson, tunFd)
+            val started = XrayBridge.startCore(configJson, tunFd)
+            if (!started) {
+                Log.e(TAG, "Failed to start Xray core inside startTunnel!")
+            }
 
             startLiveNotificationTicker()
 
@@ -98,58 +100,50 @@ class SovraVpnService : VpnService() {
 
                 val downStr = String.format("%.2f MB/s", rxSpeed)
                 val upStr = String.format("%.2f MB/s", txSpeed)
-                showNotification("⚡ SOVRA متصل است | دانلود: $downStr | آپلود: $upStr")
 
-                withContext(Dispatchers.Main) {
-                    val js = "if(typeof updateRealSpeed === 'function') updateRealSpeed('${downStr}', '${upStr}');"
-                    MainActivity.instance?.getWebView()?.evaluateJavascript(js, null)
-                }
+                updateForegroundNotification("دانلود: $downStr | آپلود: $upStr")
             }
         }
     }
 
-    private fun stopTunnel() {
-        tickerJob?.cancel()
-        tickerJob = null
-        XrayBridge.stopCore()
-        try {
-            vpnInterface?.close()
-            vpnInterface = null
-        } catch (ignored: Exception) {}
-        stopForeground(true)
-        stopSelf()
-    }
-
-    private fun showNotification(statusText: String) {
+    private fun updateForegroundNotification(statsText: String) {
+        val notifyIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val disconnectIntent = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, SovraVpnService::class.java).apply { action = ACTION_DISCONNECT },
-            PendingIntent.FLAG_IMMUTABLE
+            this, 0, notifyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val notification = NotificationCompat.Builder(this, SovraApp.CHANNEL_ID)
-            .setContentTitle("SOVRA VPN (سپر امن فعال)")
-            .setContentText(statusText)
+            .setContentTitle("سپر امنیتی SOVRA VPN فعال است")
+            .setContentText(statsText)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "قطع اتصال فوری", disconnectIntent)
             .setOngoing(true)
-            .setSilent(true)
+            .setOnlyAlertOnce(true)
             .build()
 
         startForeground(NOTIFICATION_ID, notification)
     }
 
+    private fun stopTunnel() {
+        try {
+            tickerJob?.cancel()
+            XrayBridge.stopCore()
+            vpnInterface?.close()
+            vpnInterface = null
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            Log.i(TAG, "VPN tunnel stopped cleanly")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping tunnel: ${e.message}")
+        }
+    }
+
     override fun onDestroy() {
         stopTunnel()
+        scope.cancel()
         super.onDestroy()
     }
 }
