@@ -50,7 +50,9 @@ class MainActivity : ComponentActivity() {
     private var isConnected = false
     private var pendingConnect = false
     private var selectedServerUri = ""
+    private var lockedStaticServerUri = ""
     private var activeCleanIp = ""
+    private var currentSmartMode = "fastest" // fastest, static, gaming
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private val parsedServers = mutableListOf<ServerItem>()
 
@@ -68,6 +70,12 @@ class MainActivity : ComponentActivity() {
         .build()
 
     fun getWebView(): WebView? = if (::webView.isInitialized) webView else null
+
+    fun pushLiveStats(downStr: String, upStr: String) {
+        runOnUiThread {
+            webView.evaluateJavascript("if(typeof updateTrafficDisplay === 'function') updateTrafficDisplay('$downStr', '$upStr');", null)
+        }
+    }
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -190,25 +198,28 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun doStartVpn() {
-        val targetUri = if (selectedServerUri.isNotEmpty()) {
-            selectedServerUri
-        } else if (parsedServers.isNotEmpty()) {
-            parsedServers[0].link
-        } else {
-            "vless://741fc821-4acb-4b77-9c37-8862308db928@tun.sovra.ir:2052?type=ws&security=none&path=%2Fgerman&host=german.sovra.ir#Germany-VIP"
-        }
+        lifecycleScope.launch(Dispatchers.IO) {
+            var targetUri = selectedServerUri
+            if (targetUri.isEmpty() && parsedServers.isNotEmpty()) {
+                targetUri = resolveServerForCurrentMode()
+            }
 
-        val config = ConfigGenerator.generateFromUri(targetUri, activeCleanIp)
+            if (targetUri.isEmpty()) {
+                targetUri = "vless://741fc821-4acb-4b77-9c37-8862308db928@tun.sovra.ir:2052?type=ws&security=none&path=%2Fgerman&host=german.sovra.ir#Germany-VIP"
+            }
 
-        val serviceIntent = Intent(this, SovraVpnService::class.java).apply {
-            action = SovraVpnService.ACTION_CONNECT
-            putExtra(SovraVpnService.EXTRA_CONFIG_JSON, config)
-        }
-        startService(serviceIntent)
-        isConnected = true
+            val config = ConfigGenerator.generateFromUri(targetUri, activeCleanIp)
 
-        runOnUiThread {
-            webView.evaluateJavascript("if(typeof setConnState === 'function') setConnState(true);", null)
+            val serviceIntent = Intent(this@MainActivity, SovraVpnService::class.java).apply {
+                action = SovraVpnService.ACTION_CONNECT
+                putExtra(SovraVpnService.EXTRA_CONFIG_JSON, config)
+            }
+            startService(serviceIntent)
+            isConnected = true
+
+            withContext(Dispatchers.Main) {
+                webView.evaluateJavascript("if(typeof setConnState === 'function') setConnState(true);", null)
+            }
         }
     }
 
@@ -221,6 +232,78 @@ class MainActivity : ComponentActivity() {
 
         runOnUiThread {
             webView.evaluateJavascript("if(typeof setConnState === 'function') setConnState(false);", null)
+        }
+    }
+
+    private fun resolveServerForCurrentMode(): String {
+        if (parsedServers.isEmpty()) return ""
+
+        return when (currentSmartMode) {
+            "static" -> {
+                if (lockedStaticServerUri.isNotEmpty()) {
+                    lockedStaticServerUri
+                } else {
+                    val staticCandidates = parsedServers.filter {
+                        val c = it.country.uppercase()
+                        c == "DE" || c == "SE" || c == "GB"
+                    }
+                    val pool = if (staticCandidates.isNotEmpty()) staticCandidates else parsedServers
+                    var bestUri = pool[0].link
+                    var bestDelay = Int.MAX_VALUE
+                    for (srv in pool.take(8)) {
+                        val d = measureRealHttpDelay(srv.link)
+                        if (d in 1 until bestDelay) {
+                            bestDelay = d
+                            bestUri = srv.link
+                        }
+                    }
+                    lockedStaticServerUri = bestUri
+                    bestUri
+                }
+            }
+            "gaming" -> {
+                var bestUri = parsedServers[0].link
+                var bestPing = Int.MAX_VALUE
+                val candidates = parsedServers.take(12)
+                for (srv in candidates) {
+                    val d1 = measureRealHttpDelay(srv.link)
+                    if (d1 > 0) {
+                        val d2 = measureRealHttpDelay(srv.link)
+                        if (d2 > 0) {
+                            val avg = (d1 + d2) / 2
+                            if (avg < bestPing) {
+                                bestPing = avg
+                                bestUri = srv.link
+                            }
+                        }
+                    }
+                }
+                bestUri
+            }
+            else -> {
+                // fastest
+                var bestUri = parsedServers[0].link
+                var minPing = Int.MAX_VALUE
+                for (srv in parsedServers.take(15)) {
+                    val d = measureRealHttpDelay(srv.link)
+                    if (d in 1 until minPing) {
+                        minPing = d
+                        bestUri = srv.link
+                    }
+                }
+                bestUri
+            }
+        }
+    }
+
+    private fun measureRealHttpDelay(rawUri: String): Int {
+        return try {
+            val speedtestConfig = ConfigGenerator.generateSpeedtestConfig(rawUri, activeCleanIp)
+            val delay = XrayBridge.measureOutboundDelay(speedtestConfig, "http://cp.cloudflare.com/generate_204")
+            if (delay > 0) delay.toInt() else -1
+        } catch (e: Exception) {
+            Log.e(TAG, "measureOutboundDelay error: ${e.message}")
+            -1
         }
     }
 
@@ -266,6 +349,38 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
+        fun setSmartMode(mode: String) {
+            triggerHaptic()
+            currentSmartMode = mode
+            lifecycleScope.launch(Dispatchers.IO) {
+                val modeDesc = when (mode) {
+                    "static" -> "آی‌پی تمیز و ثابت (آلمان / سوئد / انگلیس)"
+                    "gaming" -> "گیمینگ (تست پکت‌لاست و کمترین پینگ)"
+                    else -> "سریع‌ترین سرور (پایین‌ترین پینگ)"
+                }
+                withContext(Dispatchers.Main) {
+                    showToast("حالت اتصال: $modeDesc انتخاب شد")
+                }
+
+                if (parsedServers.isNotEmpty()) {
+                    val winnerUri = resolveServerForCurrentMode()
+                    selectedServerUri = winnerUri
+                    val winnerServer = parsedServers.find { it.link == winnerUri }
+                    if (winnerServer != null) {
+                        val ping = measureRealHttpDelay(winnerServer.link)
+                        if (ping > 0) winnerServer.ping = ping
+                        withContext(Dispatchers.Main) {
+                            webView.evaluateJavascript(
+                                "if(typeof onSmartServerResolved === 'function') onSmartServerResolved('${winnerServer.name}', ${winnerServer.ping});",
+                                null
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun applyCleanIp(ip: String) {
             activeCleanIp = ip
             showToast("آی‌پی تمیز کلادفلر اعمال شد: $ip")
@@ -289,6 +404,19 @@ class MainActivity : ComponentActivity() {
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Ping error: ${e.message}")
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun testSinglePing(idx: Int, uri: String) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val ping = measureRealHttpDelay(uri)
+                if (idx in 0 until parsedServers.size) {
+                    parsedServers[idx].ping = ping
+                }
+                withContext(Dispatchers.Main) {
+                    webView.evaluateJavascript("if(typeof updatePing === 'function') updatePing($idx, $ping);", null)
                 }
             }
         }
@@ -354,6 +482,8 @@ class MainActivity : ComponentActivity() {
 
                         val country = when {
                             lower.contains("germany") || lower.contains("de") || lower.contains("آلمان") -> "DE"
+                            lower.contains("sweden") || lower.contains("se") || lower.contains("سوئد") -> "SE"
+                            lower.contains("england") || lower.contains("uk") || lower.contains("gb") || lower.contains("انگلستان") || lower.contains("انگلیس") -> "GB"
                             lower.contains("turkey") || lower.contains("tr") || lower.contains("ترکیه") -> "TR"
                             lower.contains("netherlands") || lower.contains("nl") || lower.contains("هلند") -> "NL"
                             lower.contains("france") || lower.contains("fr") || lower.contains("فرانسه") -> "FR"
@@ -363,14 +493,15 @@ class MainActivity : ComponentActivity() {
                             else -> "DE"
                         }
 
-                        val defaultPing = 35 + (index % 12) * 5
-                        parsedServers.add(ServerItem(name, country, category, defaultPing, link))
+                        // Initial ping marked -1 until tested
+                        val initialPing = -1
+                        parsedServers.add(ServerItem(name, country, category, initialPing, link))
 
                         val obj = JSONObject().apply {
                             put("name", name)
                             put("country", country)
                             put("category", category)
-                            put("ping", defaultPing)
+                            put("ping", initialPing)
                             put("link", link)
                         }
                         serverArray.put(obj)
@@ -409,17 +540,6 @@ class MainActivity : ComponentActivity() {
             return sb.toString()
         }
 
-        private fun measureRealHttpDelay(rawUri: String): Int {
-            return try {
-                val speedtestConfig = ConfigGenerator.generateSpeedtestConfig(rawUri, activeCleanIp)
-                val delay = XrayBridge.measureOutboundDelay(speedtestConfig, "http://cp.cloudflare.com/generate_204")
-                if (delay > 0) delay.toInt() else -1
-            } catch (e: Exception) {
-                Log.e(TAG, "measureOutboundDelay error: ${e.message}")
-                -1
-            }
-        }
-
         @JavascriptInterface
         fun startFreeTrial() {
             triggerHaptic()
@@ -442,14 +562,14 @@ class MainActivity : ComponentActivity() {
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val json = JSONObject().apply {
-                        put("plan_title", planTitle)
+                        put("plan_name", planTitle)
                         put("amount", amount)
-                        put("receipt_image", base64Image)
+                        put("receipt_b64", base64Image)
                         put("timestamp", System.currentTimeMillis())
                     }
                     val body = json.toString().toRequestBody("application/json".toMediaType())
                     val req = Request.Builder()
-                        .url("https://api.sovra.ir/api/orders")
+                        .url("https://api.sovra.ir/v1/orders/submit_receipt")
                         .post(body)
                         .build()
                     httpClient.newCall(req).execute()
