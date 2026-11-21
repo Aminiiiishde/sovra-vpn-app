@@ -105,7 +105,7 @@ object XrayBridge {
                 }
                 return Pair(down, up)
             } catch (e: Throwable) {
-                // ignore
+                Log.w(TAG, "queryTrafficStats error: ${e.message}")
             }
         }
         return Pair(0L, 0L)
