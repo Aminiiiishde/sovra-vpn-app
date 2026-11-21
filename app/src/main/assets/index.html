@@ -1351,13 +1351,7 @@ input:checked + .switch-slider:before {
         </button>
       </div>
 
-      <div class="auth-divider"><span>یا</span></div>
-
-      <!-- FREE TRIAL BUTTON -->
-      <button class="btn-auth-trial" onclick="activateAuthTrial()">
-        <span class="material-symbols-outlined">bolt</span>
-        <span>دریافت اشتراک تست ۲۴ ساعته رایگان (۱ کلیک)</span>
-      </button>
+<!-- Free trial removed from app per request -->
     </div>
   </div>
 
@@ -1743,8 +1737,27 @@ input:checked + .switch-slider:before {
         <button class="btn-close-modal" onclick="closePaymentModal()">&times;</button>
       </div>
 
+      <!-- Order Type Selector: New vs Renew -->
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div id="btn-order-type-renew" class="plans-tab-btn active" style="flex:1;text-align:center;padding:7px;font-size:12px;border-radius:8px" onclick="setOrderType('renew')">
+          🔄 تمدید اشتراک فعلی
+        </div>
+        <div id="btn-order-type-new" class="plans-tab-btn" style="flex:1;text-align:center;padding:7px;font-size:12px;border-radius:8px" onclick="setOrderType('new')">
+          ➕ خرید اشتراک جدید
+        </div>
+      </div>
+
+      <div id="order-user-field-wrap" style="display:none;margin-bottom:10px" class="auth-form-group">
+        <label for="new-sub-username" style="font-size:12px;color:var(--cyan)">نام کاربری اشتراک جدید (حروف انگلیسی بدون فاصله):</label>
+        <input type="text" id="new-sub-username" class="auth-input" placeholder="مثال: my_sovra_acc">
+      </div>
+
       <!-- Plan Summary -->
       <div class="pay-summary-box">
+        <div class="pay-summary-row">
+          <span style="color:var(--text-muted)">نوع سفارش:</span>
+          <span style="font-weight:800;color:var(--magenta)" id="pay-order-type-text">تمدید اشتراک متصل</span>
+        </div>
         <div class="pay-summary-row">
           <span style="color:var(--text-muted)">پلن انتخابی:</span>
           <span style="font-weight:800;color:var(--cyan)" id="pay-plan-title">حجمی تانل VIP - 10 گیگ</span>
@@ -2166,6 +2179,7 @@ function loginWithSub() {
   localStorage.setItem('sovra_auth_sub', subId);
   localStorage.setItem('sovra_auth_type', 'sub');
   enterApp(subId);
+  callBridge('fetchSubscription', subId);
   showToast('ورود با سابسکریپشن موفقیت‌آمیز بود!');
 }
 
@@ -2211,10 +2225,20 @@ function logoutAccount() {
 }
 
 function checkAuthOnLoad() {
-  var sub = localStorage.getItem('sovra_auth_sub') || '5dr48a6hn8dwwbs7';
-  var user = localStorage.getItem('sovra_auth_user') || 'کاربر VIP';
-  enterApp(sub || user);
-  callBridge('fetchSubscription', sub);
+  var sub = localStorage.getItem('sovra_auth_sub');
+  var user = localStorage.getItem('sovra_auth_user');
+  if (sub && sub.trim()) {
+    currentSubId = sub.trim();
+    enterApp(currentSubId);
+    callBridge('fetchSubscription', currentSubId);
+  } else if (user && user.trim()) {
+    enterApp(user.trim());
+    if (currentSubId) callBridge('fetchSubscription', currentSubId);
+  } else {
+    // Show auth gate and require user to login
+    var gate = document.getElementById('auth-gate');
+    if (gate) gate.style.display = 'flex';
+  }
 }
 
 function loadLiveServers() {
@@ -2569,10 +2593,44 @@ function previewReceipt(event) {
   reader.readAsDataURL(file);
 }
 
+var currentOrderType = 'renew';
+
+function setOrderType(type) {
+  currentOrderType = type;
+  var bRenew = document.getElementById('btn-order-type-renew');
+  var bNew = document.getElementById('btn-order-type-new');
+  var uWrap = document.getElementById('order-user-field-wrap');
+  var typeTxt = document.getElementById('pay-order-type-text');
+
+  if (type === 'new') {
+    if (bRenew) bRenew.classList.remove('active');
+    if (bNew) bNew.classList.add('active');
+    if (uWrap) uWrap.style.display = 'block';
+    if (typeTxt) typeTxt.textContent = 'خرید اشتراک جدید در پنل سنایی';
+  } else {
+    if (bRenew) bRenew.classList.add('active');
+    if (bNew) bNew.classList.remove('active');
+    if (uWrap) uWrap.style.display = 'none';
+    if (typeTxt) typeTxt.textContent = 'تمدید اشتراک فعلی (' + (currentSubId || 'ساب متصل') + ')';
+  }
+}
+
 function submitReceiptOrder() {
   if (!receiptBase64) {
     alert('لطفاً تصویر فیش واریزی را پیوست نمایید.');
     return;
+  }
+
+  var targetUser = '';
+  if (currentOrderType === 'new') {
+    var uInput = document.getElementById('new-sub-username');
+    targetUser = uInput ? uInput.value.trim() : '';
+    if (!targetUser) {
+      alert('لطفاً یک نام دلخواه برای اشتراک جدید خود وارد کنید.');
+      return;
+    }
+  } else {
+    targetUser = currentSubId || 'active_sub';
   }
 
   var btn = document.getElementById('btn-submit-order');
@@ -2588,11 +2646,14 @@ function submitReceiptOrder() {
     gb: currentPaymentOrder.gb,
     users: currentPaymentOrder.users,
     amount: currentPaymentOrder.amount,
+    order_type: currentOrderType,
+    target_username: targetUser,
+    sub_id: currentSubId,
     receipt_b64: receiptBase64
   };
 
   try {
-    callBridge('uploadReceipt', receiptBase64, currentPaymentOrder.title, currentPaymentOrder.amount);
+    callBridge('uploadReceipt', receiptBase64, currentPaymentOrder.title, currentPaymentOrder.amount, currentOrderType, targetUser);
   } catch(e) {
     console.warn("uploadReceipt bridge error:", e);
   }
