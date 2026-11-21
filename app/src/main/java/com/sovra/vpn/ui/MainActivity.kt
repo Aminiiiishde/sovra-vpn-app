@@ -75,9 +75,19 @@ class MainActivity : ComponentActivity() {
 
     fun getWebView(): WebView? = if (::webView.isInitialized) webView else null
 
-    fun pushLiveStats(downStr: String, upStr: String) {
+    fun notifyVpnDisconnected() {
+        isConnected = false
         runOnUiThread {
-            webView.evaluateJavascript("if(typeof updateTrafficDisplay === 'function') updateTrafficDisplay('$downStr', '$upStr');", null)
+            webView.evaluateJavascript("if(typeof setConnState === 'function') setConnState(false);", null)
+        }
+    }
+
+    fun pushLiveStats(downStr: String, upStr: String, totalStr: String) {
+        runOnUiThread {
+            webView.evaluateJavascript(
+                "if(typeof updateTrafficDisplay === 'function') updateTrafficDisplay('$downStr', '$upStr', '$totalStr');",
+                null
+            )
         }
     }
 
