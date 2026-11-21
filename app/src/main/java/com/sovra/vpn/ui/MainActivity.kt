@@ -36,6 +36,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
@@ -58,15 +60,17 @@ class MainActivity : ComponentActivity() {
 
     data class ServerItem(
         val name: String,
+        val flag: String,
         val country: String,
         val category: String,
+        val proto: String,
         var ping: Int,
         val link: String
     )
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(12, TimeUnit.SECONDS)
         .build()
 
     fun getWebView(): WebView? = if (::webView.isInitialized) webView else null
@@ -138,6 +142,8 @@ class MainActivity : ComponentActivity() {
                     super.onPageFinished(view, url)
                     Log.d(TAG, "WebView page loaded: $url")
                     runCleanIpScanner()
+                    // Auto-load subscription
+                    WebAppBridge().fetchSubscription("5dr48a6hn8dwwbs7")
                 }
             }
 
@@ -205,9 +211,10 @@ class MainActivity : ComponentActivity() {
             }
 
             if (targetUri.isEmpty()) {
-                targetUri = "vless://741fc821-4acb-4b77-9c37-8862308db928@tun.sovra.ir:2052?type=ws&security=none&path=%2Fgerman&host=german.sovra.ir#Germany-VIP"
+                targetUri = "vless://32391f04-ab3a-47b4-a235-d9716a601c44@tun.sovra.ir:7822?type=httpupgrade&security=tls&path=%2Fvideogames%2Fv2%2Fsk&host=german.sovra.ir&sni=german.sovra.ir&fp=chrome#Germany-VIP"
             }
 
+            Log.d(TAG, "Starting VPN with targetUri: $targetUri")
             val config = ConfigGenerator.generateFromUri(targetUri, activeCleanIp)
 
             val serviceIntent = Intent(this@MainActivity, SovraVpnService::class.java).apply {
@@ -250,8 +257,8 @@ class MainActivity : ComponentActivity() {
                     val pool = if (staticCandidates.isNotEmpty()) staticCandidates else parsedServers
                     var bestUri = pool[0].link
                     var bestDelay = Int.MAX_VALUE
-                    for (srv in pool.take(8)) {
-                        val d = measureRealHttpDelay(srv.link)
+                    for (srv in pool.take(6)) {
+                        val d = measureRealDelay(srv.link)
                         if (d in 1 until bestDelay) {
                             bestDelay = d
                             bestUri = srv.link
@@ -264,11 +271,11 @@ class MainActivity : ComponentActivity() {
             "gaming" -> {
                 var bestUri = parsedServers[0].link
                 var bestPing = Int.MAX_VALUE
-                val candidates = parsedServers.take(12)
+                val candidates = parsedServers.take(8)
                 for (srv in candidates) {
-                    val d1 = measureRealHttpDelay(srv.link)
+                    val d1 = measureRealDelay(srv.link)
                     if (d1 > 0) {
-                        val d2 = measureRealHttpDelay(srv.link)
+                        val d2 = measureRealDelay(srv.link)
                         if (d2 > 0) {
                             val avg = (d1 + d2) / 2
                             if (avg < bestPing) {
@@ -284,8 +291,8 @@ class MainActivity : ComponentActivity() {
                 // fastest
                 var bestUri = parsedServers[0].link
                 var minPing = Int.MAX_VALUE
-                for (srv in parsedServers.take(15)) {
-                    val d = measureRealHttpDelay(srv.link)
+                for (srv in parsedServers.take(10)) {
+                    val d = measureRealDelay(srv.link)
                     if (d in 1 until minPing) {
                         minPing = d
                         bestUri = srv.link
@@ -296,15 +303,171 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun measureRealHttpDelay(rawUri: String): Int {
+    private fun measureTcpConnectTime(rawUri: String): Int {
         return try {
-            val speedtestConfig = ConfigGenerator.generateSpeedtestConfig(rawUri, activeCleanIp)
-            val delay = XrayBridge.measureOutboundDelay(speedtestConfig, "http://cp.cloudflare.com/generate_204")
-            if (delay > 0) delay.toInt() else -1
+            val clean = rawUri.split("#")[0].trim()
+            val host: String
+            val port: Int
+
+            if (clean.startsWith("vmess://")) {
+                val b64 = clean.removePrefix("vmess://")
+                val pad = (4 - b64.length % 4) % 4
+                val jsonStr = String(Base64.decode(b64 + "=".repeat(pad), Base64.DEFAULT))
+                val obj = JSONObject(jsonStr)
+                host = obj.optString("add", "tun.sovra.ir")
+                port = obj.optString("port", "443").split("/")[0].toIntOrNull() ?: 443
+            } else if (clean.startsWith("ss://")) {
+                val body = clean.removePrefix("ss://")
+                val hp = if (body.contains("@")) body.split("@")[1].split("?")[0].split(":") else body.split("?")[0].split(":")
+                host = hp[0]
+                port = hp[1].split("/")[0].toIntOrNull() ?: 8388
+            } else {
+                // vless or trojan
+                val body = clean.substringAfter("://")
+                val hp_q = body.split("@")[1].split("?")[0].split(":")
+                host = hp_q[0]
+                port = hp_q[1].split("/")[0].toIntOrNull() ?: 443
+            }
+
+            val t0 = System.currentTimeMillis()
+            val socket = Socket()
+            socket.connect(InetSocketAddress(host, port), 1500)
+            val elapsed = (System.currentTimeMillis() - t0).toInt()
+            socket.close()
+            if (elapsed > 0) elapsed else 1
         } catch (e: Exception) {
-            Log.e(TAG, "measureOutboundDelay error: ${e.message}")
             -1
         }
+    }
+
+    private fun measureRealDelay(rawUri: String): Int {
+        val tcpTime = measureTcpConnectTime(rawUri)
+        if (tcpTime > 0) {
+            try {
+                val speedtestConfig = ConfigGenerator.generateSpeedtestConfig(rawUri, activeCleanIp)
+                val delay = XrayBridge.measureOutboundDelay(speedtestConfig, "http://cp.cloudflare.com/generate_204")
+                if (delay in 1..3000) {
+                    return delay.toInt()
+                }
+            } catch (_: Exception) {}
+            return tcpTime
+        }
+        return -1
+    }
+
+    private fun doFetchSubscription(subInput: String) {
+        var subUrl = subInput.trim()
+        if (!subUrl.startsWith("http://") && !subUrl.startsWith("https://")) {
+            var cleanId = subUrl
+            if (cleanId.contains("/subs/")) cleanId = cleanId.split("/subs/")[1].split("?")[0]
+            if (cleanId.contains("/sub/")) cleanId = cleanId.split("/sub/")[1].split("?")[0]
+            subUrl = "https://sub.aminishere.shop/subs/$cleanId"
+        }
+
+        Log.d(TAG, "Fetching subscription from: $subUrl")
+        val req = Request.Builder()
+            .url(subUrl)
+            .header("User-Agent", "v2rayNG/1.8.19")
+            .build()
+
+        val resp = httpClient.newCall(req).execute()
+        val rawBody = resp.body?.string() ?: ""
+
+        var decodedText = rawBody
+        try {
+            val bytes = Base64.decode(rawBody.trim(), Base64.DEFAULT)
+            decodedText = String(bytes)
+        } catch (_: Exception) {}
+
+        val lines = decodedText.lines().map { it.trim() }.filter { link ->
+            (link.startsWith("vless://") || link.startsWith("vmess://") || link.startsWith("trojan://") || link.startsWith("ss://"))
+            && !link.contains("nothing.to.cash")
+            && !link.contains("127.0.0.1")
+        }
+
+        val serverArray = JSONArray()
+        parsedServers.clear()
+        var vipCount = 0
+        var directCount = 0
+
+        lines.forEachIndexed { index, link ->
+            var rawRemark = "SOVRA-$index"
+            if (link.contains("#")) {
+                rawRemark = try {
+                    URLDecoder.decode(link.split("#")[1], "UTF-8")
+                } catch (_: Exception) {
+                    link.split("#")[1]
+                }
+            }
+
+            val normalized = normalizeSmallCaps(rawRemark).lowercase()
+            val isVip = normalized.contains("tunnel") || normalized.contains("تانل") || normalized.contains("ir-") || normalized.contains("iran")
+
+            val category = if (isVip) {
+                vipCount++
+                "vip"
+            } else {
+                directCount++
+                "direct"
+            }
+
+            val (flag, country, faCountry) = when {
+                normalized.contains("germany") || normalized.contains("de") || normalized.contains("آلمان") -> Triple("🇩🇪", "DE", "آلمان")
+                normalized.contains("sweden") || normalized.contains("se") || normalized.contains("سوئد") -> Triple("🇸🇪", "SE", "سوئد")
+                normalized.contains("england") || normalized.contains("uk") || normalized.contains("gb") || normalized.contains("انگلستان") || normalized.contains("انگلیس") -> Triple("🇬🇧", "GB", "انگلستان")
+                normalized.contains("turkey") || normalized.contains("tr") || normalized.contains("ترکیه") -> Triple("🇹🇷", "TR", "ترکیه")
+                normalized.contains("netherlands") || normalized.contains("nl") || normalized.contains("هلند") -> Triple("🇳🇱", "NL", "هلند")
+                normalized.contains("france") || normalized.contains("fr") || normalized.contains("فرانسه") -> Triple("🇫🇷", "FR", "فرانسه")
+                normalized.contains("finland") || normalized.contains("fi") || normalized.contains("فنلاند") -> Triple("🇫🇮", "FI", "فنلاند")
+                normalized.contains("iran") || normalized.contains("ir") || normalized.contains("ایران") -> Triple("🇮🇷", "IR", "ایران")
+                normalized.contains("us") || normalized.contains("usa") || normalized.contains("آمریکا") || normalized.contains("kansas") -> Triple("🇺🇸", "US", "آمریکا")
+                else -> Triple("🇩🇪", "DE", "آلمان")
+            }
+
+            val typeDesc = if (isVip) "تانل VIP" else "مستقیم فستلی"
+            val cleanTitle = "$faCountry - $typeDesc (${index + 1})"
+            val proto = if (link.startsWith("vless://")) "VLESS" else if (link.startsWith("trojan://")) "Trojan" else if (link.startsWith("vmess://")) "VMess" else "SS"
+
+            val initialPing = -1
+            parsedServers.add(ServerItem(cleanTitle, flag, country, category, proto, initialPing, link))
+
+            val obj = JSONObject().apply {
+                put("name", cleanTitle)
+                put("flag", flag)
+                put("country", country)
+                put("category", category)
+                put("cat", category)
+                put("proto", proto)
+                put("ping", initialPing)
+                put("link", link)
+                put("uri", link)
+            }
+            serverArray.put(obj)
+        }
+
+        if (parsedServers.isNotEmpty() && selectedServerUri.isEmpty()) {
+            selectedServerUri = parsedServers[0].link
+        }
+
+        runOnUiThread {
+            val jsonStr = serverArray.toString().replace("'", "\\'")
+            val js = "if(typeof onSubscriptionLoaded === 'function') onSubscriptionLoaded('$jsonStr', $vipCount, $directCount);"
+            webView.evaluateJavascript(js, null)
+        }
+    }
+
+    private fun normalizeSmallCaps(s: String): String {
+        val map = mapOf(
+            'ᴛ' to 't', 'ᴜ' to 'u', 'ɴ' to 'n', 'ᴇ' to 'e', 'ʟ' to 'l',
+            'ᴅ' to 'd', 'ɪ' to 'i', 'ʀ' to 'r', 'ᴄ' to 'c', 'ꜰ' to 'f',
+            'ꜱ' to 's', 'ᴀ' to 'a', 'ᴏ' to 'o', 'ᴠ' to 'v', 'ɢ' to 'g',
+            'ᴋ' to 'k', 'ʏ' to 'y', 'ʙ' to 'b', 'ᴍ' to 'm', 'ᴡ' to 'w'
+        )
+        val sb = StringBuilder()
+        for (ch in s) {
+            sb.append(map[ch] ?: ch)
+        }
+        return sb.toString()
     }
 
     inner class WebAppBridge {
@@ -358,23 +521,24 @@ class MainActivity : ComponentActivity() {
                     "gaming" -> "گیمینگ (تست پکت‌لاست و کمترین پینگ)"
                     else -> "سریع‌ترین سرور (پایین‌ترین پینگ)"
                 }
-                withContext(Dispatchers.Main) {
-                    showToast("حالت اتصال: $modeDesc انتخاب شد")
-                }
 
                 if (parsedServers.isNotEmpty()) {
                     val winnerUri = resolveServerForCurrentMode()
                     selectedServerUri = winnerUri
-                    val winnerServer = parsedServers.find { it.link == winnerUri }
-                    if (winnerServer != null) {
-                        val ping = measureRealHttpDelay(winnerServer.link)
-                        if (ping > 0) winnerServer.ping = ping
-                        withContext(Dispatchers.Main) {
-                            webView.evaluateJavascript(
-                                "if(typeof onSmartServerResolved === 'function') onSmartServerResolved('${winnerServer.name}', ${winnerServer.ping});",
-                                null
-                            )
-                        }
+                    val winnerServer = parsedServers.find { it.link == winnerUri } ?: parsedServers[0]
+                    val ping = measureRealDelay(winnerServer.link)
+                    if (ping > 0) winnerServer.ping = ping
+
+                    withContext(Dispatchers.Main) {
+                        showToast("$modeDesc: ${winnerServer.name} (${if (ping > 0) "$ping ms" else "متصل"})")
+                        webView.evaluateJavascript(
+                            "if(typeof onSmartServerResolved === 'function') onSmartServerResolved('${winnerServer.name}', ${winnerServer.ping}, '${winnerServer.flag}');",
+                            null
+                        )
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        showToast("حالت اتصال: $modeDesc انتخاب شد")
                     }
                 }
             }
@@ -394,7 +558,7 @@ class MainActivity : ComponentActivity() {
                     val array = JSONArray(urisJson)
                     for (i in 0 until array.length()) {
                         val uriStr = array.getString(i)
-                        val ping = measureRealHttpDelay(uriStr)
+                        val ping = measureRealDelay(uriStr)
                         if (i in 0 until parsedServers.size) {
                             parsedServers[i].ping = ping
                         }
@@ -411,7 +575,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun testSinglePing(idx: Int, uri: String) {
             lifecycleScope.launch(Dispatchers.IO) {
-                val ping = measureRealHttpDelay(uri)
+                val ping = measureRealDelay(uri)
                 if (idx in 0 until parsedServers.size) {
                     parsedServers[idx].ping = ping
                 }
@@ -423,130 +587,39 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface
         fun fetchSubscription(subInput: String) {
-            triggerHaptic()
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
-                    var subUrl = subInput.trim()
-                    if (!subUrl.startsWith("http://") && !subUrl.startsWith("https://")) {
-                        var cleanId = subUrl
-                        if (cleanId.contains("/subs/")) cleanId = cleanId.split("/subs/")[1].split("?")[0]
-                        if (cleanId.contains("/sub/")) cleanId = cleanId.split("/sub/")[1].split("?")[0]
-                        subUrl = "https://sub.aminishere.shop/subs/$cleanId"
-                    }
-
-                    Log.d(TAG, "Fetching subscription from: $subUrl")
-                    val req = Request.Builder()
-                        .url(subUrl)
-                        .header("User-Agent", "v2rayNG/1.8.19")
-                        .build()
-
-                    val resp = httpClient.newCall(req).execute()
-                    val rawBody = resp.body?.string() ?: ""
-
-                    var decodedText = rawBody
-                    try {
-                        val bytes = Base64.decode(rawBody.trim(), Base64.DEFAULT)
-                        decodedText = String(bytes)
-                    } catch (_: Exception) {}
-
-                    val lines = decodedText.lines().map { it.trim() }.filter {
-                        it.startsWith("vless://") || it.startsWith("vmess://") || it.startsWith("trojan://") || it.startsWith("ss://")
-                    }
-
-                    val serverArray = JSONArray()
-                    parsedServers.clear()
-                    var vipCount = 0
-                    var directCount = 0
-
-                    lines.forEachIndexed { index, link ->
-                        var name = "SOVRA-$index"
-                        if (link.contains("#")) {
-                            name = try {
-                                URLDecoder.decode(link.split("#")[1], "UTF-8")
-                            } catch (_: Exception) {
-                                link.split("#")[1]
-                            }
-                        }
-
-                        val lower = normalizeSmallCaps(name).lowercase()
-                        val isVip = lower.contains("tunnel") || lower.contains("تانل") || lower.contains("ir-") || lower.contains("iran")
-                        val isDirect = lower.contains("direct") || lower.contains("مستقیم") || lower.contains("fastly") || lower.contains("cdn")
-
-                        val category = if (isVip && !isDirect) {
-                            vipCount++
-                            "vip"
-                        } else {
-                            directCount++
-                            "direct"
-                        }
-
-                        val country = when {
-                            lower.contains("germany") || lower.contains("de") || lower.contains("آلمان") -> "DE"
-                            lower.contains("sweden") || lower.contains("se") || lower.contains("سوئد") -> "SE"
-                            lower.contains("england") || lower.contains("uk") || lower.contains("gb") || lower.contains("انگلستان") || lower.contains("انگلیس") -> "GB"
-                            lower.contains("turkey") || lower.contains("tr") || lower.contains("ترکیه") -> "TR"
-                            lower.contains("netherlands") || lower.contains("nl") || lower.contains("هلند") -> "NL"
-                            lower.contains("france") || lower.contains("fr") || lower.contains("فرانسه") -> "FR"
-                            lower.contains("finland") || lower.contains("fi") || lower.contains("فنلاند") -> "FI"
-                            lower.contains("iran") || lower.contains("ir") || lower.contains("ایران") -> "IR"
-                            lower.contains("us") || lower.contains("usa") || lower.contains("آمریکا") -> "US"
-                            else -> "DE"
-                        }
-
-                        // Initial ping marked -1 until tested
-                        val initialPing = -1
-                        parsedServers.add(ServerItem(name, country, category, initialPing, link))
-
-                        val obj = JSONObject().apply {
-                            put("name", name)
-                            put("country", country)
-                            put("category", category)
-                            put("ping", initialPing)
-                            put("link", link)
-                        }
-                        serverArray.put(obj)
-                    }
-
-                    if (parsedServers.isNotEmpty() && selectedServerUri.isEmpty()) {
-                        selectedServerUri = parsedServers[0].link
-                    }
-
+                    doFetchSubscription(subInput)
                     withContext(Dispatchers.Main) {
-                        val jsonStr = serverArray.toString().replace("'", "\\'")
-                        val js = "if(typeof onSubscriptionLoaded === 'function') onSubscriptionLoaded('$jsonStr', $vipCount, $directCount);"
-                        webView.evaluateJavascript(js, null)
-                        showToast("لیست ${serverArray.length()} سرور ساب با موفقیت بارگذاری شد")
+                        showToast("لیست ${parsedServers.size} سرور فعال بارگذاری شد")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "fetchSubscription failed: ${e.message}", e)
                     withContext(Dispatchers.Main) {
-                        showToast("خطا در دریافت ساب: ${e.message}")
+                        showToast("خطا در بارگذاری ساب: ${e.message}")
                     }
                 }
             }
         }
 
-        private fun normalizeSmallCaps(s: String): String {
-            val map = mapOf(
-                'ᴛ' to 't', 'ᴜ' to 'u', 'ɴ' to 'n', 'ᴇ' to 'e', 'ʟ' to 'l',
-                'ᴅ' to 'd', 'ɪ' to 'i', 'ʀ' to 'r', 'ᴄ' to 'c', 'ꜰ' to 'f',
-                'ꜱ' to 's', 'ᴀ' to 'a', 'ᴏ' to 'o', 'ᴠ' to 'v', 'ɢ' to 'g',
-                'ᴋ' to 'k', 'ʏ' to 'y', 'ʙ' to 'b', 'ᴍ' to 'm', 'ᴡ' to 'w'
-            )
-            val sb = StringBuilder()
-            for (ch in s) {
-                sb.append(map[ch] ?: ch)
-            }
-            return sb.toString()
-        }
-
         @JavascriptInterface
         fun startFreeTrial() {
             triggerHaptic()
-            fetchSubscription("5dr48a6hn8dwwbs7")
-            runOnUiThread {
-                Toast.makeText(this@MainActivity, "اکانت تست ۲۴ ساعته فعال گردید!", Toast.LENGTH_SHORT).show()
-                prepareAndConnect()
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    withContext(Dispatchers.Main) {
+                        showToast("در حال راه‌اندازی اکانت تست ۲۴ ساعته...")
+                    }
+                    doFetchSubscription("5dr48a6hn8dwwbs7")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "اکانت تست ۲۴ ساعته فعال گردید!", Toast.LENGTH_SHORT).show()
+                        prepareAndConnect()
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        showToast("خطا در فعال‌سازی اکانت تست: ${e.message}")
+                    }
+                }
             }
         }
 
