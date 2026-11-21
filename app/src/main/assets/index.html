@@ -1776,17 +1776,7 @@ input:checked + .switch-slider:before {
 
       <!-- Receipt Submission Form -->
       <div class="pay-form-group">
-        <label for="pay-tracking">کد رهگیری / شماره پیگیری یا ارجاع بانک (الزامی):</label>
-        <input type="text" id="pay-tracking" class="pay-input" placeholder="مثال: 987654321">
-      </div>
-
-      <div class="pay-form-group">
-        <label for="pay-phone">شماره همراه یا آیدی تلگرام شما (جهت هماهنگی):</label>
-        <input type="text" id="pay-phone" class="pay-input" placeholder="09123456789 یا @username">
-      </div>
-
-      <div class="pay-form-group">
-        <label for="pay-receipt-file">بارگذاری تصویر فیش واریزی (اختیاری اما تسریع‌کننده):</label>
+        <label for="pay-receipt-file">بارگذاری تصویر فیش واریزی (الزامی):</label>
         <input type="file" id="pay-receipt-file" class="pay-input" accept="image/*" onchange="previewReceipt(event)">
         <div class="receipt-preview-wrap" id="receipt-preview-box">
           <img id="receipt-preview-img" class="receipt-preview" alt="پیش‌نمایش رسید">
@@ -2245,11 +2235,12 @@ function setSmartMode(mode) {
     if (b) b.classList.toggle('active', m === mode);
   });
   var badge = document.getElementById('active-mode-badge');
-  if (mode === 'fastest') badge.textContent = 'سریع‌ترین سرور';
-  else if (mode === 'static') badge.textContent = 'آی‌پی تمیز و ثابت';
-  else if (mode === 'gaming') badge.textContent = 'گیمینگ و پینگ پایین';
+  if (mode === 'fastest') badge.textContent = 'سریع‌ترین (در حال ارزیابی...)';
+  else if (mode === 'static') badge.textContent = 'آی‌پی ثابت (آلمان/سوئد/انگلیس)';
+  else if (mode === 'gaming') badge.textContent = 'گیمینگ (بررسی پکت‌لاست...)';
 
-  showToast('حالت اتصال به «' + badge.textContent + '» تغییر یافت');
+  showToast('حالت اتصال: ' + badge.textContent);
+  callBridge('setSmartMode', mode);
 }
 
 /* ═══ CONNECTION TOGGLE ═══ */
@@ -2297,10 +2288,7 @@ function renderConnectedState() {
     var m = Math.floor(secsConnected / 60);
     var s = secsConnected % 60;
     document.getElementById('stat-time').textContent = (m < 10 ? '0' + m : m) + ':' + (s < 10 ? '0' + s : s);
-    var down = (3.4 + Math.random() * 6.8).toFixed(1);
-    document.getElementById('stat-down').textContent = down + ' MB/s';
-    var p = Math.floor(35 + Math.random() * 8);
-    document.getElementById('stat-ping').textContent = p + ' ms';
+    // Real speed and ping are pushed from AndroidBridge / SovraVpnService
   }, 1000);
 }
 
@@ -2313,7 +2301,7 @@ function renderDisconnectedState() {
   clearInterval(trafficTimer);
   document.getElementById('stat-time').textContent = '00:00';
   document.getElementById('stat-down').textContent = '0.0 MB/s';
-  document.getElementById('stat-ping').textContent = '42 ms';
+  document.getElementById('stat-ping').textContent = '--';
   showToast('اتصال قطع گردید');
 }
 
@@ -2383,18 +2371,56 @@ function selectServer(idx) {
 }
 
 function pingAllServers() {
-  showToast('در حال تست پینگ ۴۲ سرور...');
+  showToast('در حال تست پینگ زنده و واقعی سرورها...');
   var uris = SERVERS.map(function(s){ return s.link || ''; });
-  callBridge('testAllPing', JSON.stringify(uris));
   SERVERS.forEach(function(s, idx) {
     var el = document.getElementById('srv-ping-' + idx);
     if (el) {
-      var newPing = Math.floor(32 + Math.random() * 25);
-      s.ping = newPing;
-      el.textContent = newPing + ' ms';
+      el.textContent = '...';
     }
   });
+  callBridge('testAllPing', JSON.stringify(uris));
 }
+
+window.updatePing = function(idx, ping) {
+  if (idx >= 0 && idx < SERVERS.length) {
+    SERVERS[idx].ping = ping;
+  }
+  var el = document.getElementById('srv-ping-' + idx);
+  if (el) {
+    if (ping > 0) {
+      el.textContent = ping + ' ms';
+      el.className = (ping < 65 ? 'srv-ping ping-good' : (ping < 120 ? 'srv-ping ping-med' : 'srv-ping ping-bad'));
+    } else {
+      el.textContent = 'تایم‌اوت';
+      el.className = 'srv-ping ping-bad';
+    }
+  }
+  if (idx === currentServerIdx) {
+    var statPing = document.getElementById('stat-ping');
+    if (statPing) {
+      statPing.textContent = (ping > 0 ? ping + ' ms' : '--');
+    }
+  }
+};
+
+window.updateTrafficDisplay = function(downStr, upStr) {
+  var elDown = document.getElementById('stat-down');
+  if (elDown && downStr) {
+    elDown.textContent = downStr;
+  }
+};
+
+window.onSmartServerResolved = function(name, ping) {
+  var badge = document.getElementById('active-mode-badge');
+  if (badge && ping > 0) {
+    badge.textContent = name + ' (' + ping + 'ms)';
+  }
+  var statPing = document.getElementById('stat-ping');
+  if (statPing && ping > 0) {
+    statPing.textContent = ping + ' ms';
+  }
+};
 
 /* ═══ PLANS & VOLUME SLIDER ═══ */
 function switchPlanTab(tab) {
@@ -2471,8 +2497,8 @@ function openPayment(kind, type, users, price, customTitle) {
 
   document.getElementById('pay-plan-title').textContent = title;
   document.getElementById('pay-amount-display').textContent = amount.toLocaleString() + ' تومان';
-  document.getElementById('pay-tracking').value = '';
-  document.getElementById('pay-phone').value = '';
+  var elTrk = document.getElementById('pay-tracking'); if (elTrk) elTrk.value = '';
+  var elPhn = document.getElementById('pay-phone'); if (elPhn) elPhn.value = '';
   document.getElementById('pay-receipt-file').value = '';
   document.getElementById('receipt-preview-box').style.display = 'none';
   receiptBase64 = null;
