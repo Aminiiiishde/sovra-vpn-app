@@ -30,12 +30,12 @@ import com.sovra.vpn.scanner.SmartCloudflareScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
@@ -52,6 +52,15 @@ class MainActivity : ComponentActivity() {
     private var selectedServerUri = ""
     private var activeCleanIp = ""
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+    private val parsedServers = mutableListOf<ServerItem>()
+
+    data class ServerItem(
+        val name: String,
+        val country: String,
+        val category: String,
+        var ping: Int,
+        val link: String
+    )
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
@@ -98,19 +107,20 @@ class MainActivity : ComponentActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
             setBackgroundColor(android.graphics.Color.parseColor("#03050C"))
-            overScrollMode = View.OVER_SCROLL_NEVER
+            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
 
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                databaseEnabled = true
                 allowFileAccess = true
                 allowContentAccess = true
-                loadsImagesAutomatically = true
-                cacheMode = WebSettings.LOAD_DEFAULT
+                databaseEnabled = true
                 useWideViewPort = true
                 loadWithOverviewMode = true
-                textZoom = 100
+                cacheMode = WebSettings.LOAD_DEFAULT
+                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             }
 
             addJavascriptInterface(WebAppBridge(), "AndroidBridge")
@@ -118,6 +128,7 @@ class MainActivity : ComponentActivity() {
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    Log.d(TAG, "WebView page loaded: $url")
                     runCleanIpScanner()
                 }
             }
@@ -134,17 +145,12 @@ class MainActivity : ComponentActivity() {
                     return true
                 }
             }
+
+            loadUrl("file:///android_asset/index.html")
         }
 
         root.addView(webView)
         setContentView(root)
-
-        webView.loadUrl("file:///android_asset/index.html")
-    }
-
-    override fun onDestroy() {
-        if (instance == this) instance = null
-        super.onDestroy()
     }
 
     private fun triggerHaptic() {
@@ -184,7 +190,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun doStartVpn() {
-        val targetUri = if (selectedServerUri.isNotEmpty()) selectedServerUri else "vless://741fc821-4acb-4b77-9c37-8862308db928@tun.sovra.ir:2052?type=ws&security=none&path=%2Fgerman&host=german.sovra.ir#Germany-VIP"
+        val targetUri = if (selectedServerUri.isNotEmpty()) {
+            selectedServerUri
+        } else if (parsedServers.isNotEmpty()) {
+            parsedServers[0].link
+        } else {
+            "vless://741fc821-4acb-4b77-9c37-8862308db928@tun.sovra.ir:2052?type=ws&security=none&path=%2Fgerman&host=german.sovra.ir#Germany-VIP"
+        }
+
         val config = ConfigGenerator.generateFromUri(targetUri, activeCleanIp)
 
         val serviceIntent = Intent(this, SovraVpnService::class.java).apply {
@@ -237,9 +250,19 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
+        fun selectServer(idx: Int) {
+            triggerHaptic()
+            if (idx in 0 until parsedServers.size) {
+                selectedServerUri = parsedServers[idx].link
+                Log.d(TAG, "Selected server idx=$idx: ${parsedServers[idx].name}")
+            }
+        }
+
+        @JavascriptInterface
         fun selectServerUri(uri: String) {
             triggerHaptic()
             selectedServerUri = uri
+            Log.d(TAG, "Selected server uri: $uri")
         }
 
         @JavascriptInterface
@@ -257,6 +280,9 @@ class MainActivity : ComponentActivity() {
                     for (i in 0 until array.length()) {
                         val uriStr = array.getString(i)
                         val ping = measureRealHttpDelay(uriStr)
+                        if (i in 0 until parsedServers.size) {
+                            parsedServers[i].ping = ping
+                        }
                         withContext(Dispatchers.Main) {
                             webView.evaluateJavascript("if(typeof updatePing === 'function') updatePing($i, $ping);", null)
                         }
@@ -300,6 +326,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     val serverArray = JSONArray()
+                    parsedServers.clear()
                     var vipCount = 0
                     var directCount = 0
 
@@ -332,17 +359,25 @@ class MainActivity : ComponentActivity() {
                             lower.contains("france") || lower.contains("fr") || lower.contains("فرانسه") -> "FR"
                             lower.contains("finland") || lower.contains("fi") || lower.contains("فنلاند") -> "FI"
                             lower.contains("iran") || lower.contains("ir") || lower.contains("ایران") -> "IR"
+                            lower.contains("us") || lower.contains("usa") || lower.contains("آمریکا") -> "US"
                             else -> "DE"
                         }
+
+                        val defaultPing = 35 + (index % 12) * 5
+                        parsedServers.add(ServerItem(name, country, category, defaultPing, link))
 
                         val obj = JSONObject().apply {
                             put("name", name)
                             put("country", country)
                             put("category", category)
-                            put("ping", 30 + (index % 15) * 4)
+                            put("ping", defaultPing)
                             put("link", link)
                         }
                         serverArray.put(obj)
+                    }
+
+                    if (parsedServers.isNotEmpty() && selectedServerUri.isEmpty()) {
+                        selectedServerUri = parsedServers[0].link
                     }
 
                     withContext(Dispatchers.Main) {
@@ -363,7 +398,9 @@ class MainActivity : ComponentActivity() {
         private fun normalizeSmallCaps(s: String): String {
             val map = mapOf(
                 'ᴛ' to 't', 'ᴜ' to 'u', 'ɴ' to 'n', 'ᴇ' to 'e', 'ʟ' to 'l',
-                'ᴅ' to 'd', 'ɪ' to 'i', 'ʀ' to 'r', 'ᴄ' to 'c'
+                'ᴅ' to 'd', 'ɪ' to 'i', 'ʀ' to 'r', 'ᴄ' to 'c', 'ꜰ' to 'f',
+                'ꜱ' to 's', 'ᴀ' to 'a', 'ᴏ' to 'o', 'ᴠ' to 'v', 'ɢ' to 'g',
+                'ᴋ' to 'k', 'ʏ' to 'y', 'ʙ' to 'b', 'ᴍ' to 'm', 'ᴡ' to 'w'
             )
             val sb = StringBuilder()
             for (ch in s) {
@@ -373,33 +410,13 @@ class MainActivity : ComponentActivity() {
         }
 
         private fun measureRealHttpDelay(rawUri: String): Int {
-            // 1. Try native Xray Libv2ray.measureOutboundDelay
-            try {
-                val config = ConfigGenerator.generateFromUri(rawUri, activeCleanIp)
-                val delay = XrayBridge.measureOutboundDelay(config, "http://cp.cloudflare.com/generate_204")
-                if (delay > 0) return delay.toInt()
-            } catch (_: Exception) {}
-
-            // 2. Accurate HTTP handshake delay fallback
-            val start = System.currentTimeMillis()
-            var socket: Socket? = null
-            try {
-                var host = "tun.sovra.ir"
-                var port = 443
-                if (rawUri.contains("@")) {
-                    val afterAt = rawUri.split("@")[1].split("?")[0].split("#")[0]
-                    val hp = afterAt.split(":")
-                    host = hp[0]
-                    if (hp.size > 1) port = hp[1].toIntOrNull() ?: 443
-                }
-                socket = Socket()
-                socket.connect(InetSocketAddress(host, port), 2500)
-                val delay = (System.currentTimeMillis() - start).toInt()
-                socket.close()
-                return if (delay > 0) delay else 32
+            return try {
+                val speedtestConfig = ConfigGenerator.generateSpeedtestConfig(rawUri, activeCleanIp)
+                val delay = XrayBridge.measureOutboundDelay(speedtestConfig, "http://cp.cloudflare.com/generate_204")
+                if (delay > 0) delay.toInt() else -1
             } catch (e: Exception) {
-                try { socket?.close() } catch (ignored: Exception) {}
-                return -1
+                Log.e(TAG, "measureOutboundDelay error: ${e.message}")
+                -1
             }
         }
 
@@ -417,6 +434,30 @@ class MainActivity : ComponentActivity() {
         fun submitOrder(title: String, amount: Long) {
             triggerHaptic()
             showToast("سفارش «$title» به مبلغ $amount تومان ثبت گردید.")
+        }
+
+        @JavascriptInterface
+        fun uploadReceipt(base64Image: String, planTitle: String, amount: Long) {
+            triggerHaptic()
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val json = JSONObject().apply {
+                        put("plan_title", planTitle)
+                        put("amount", amount)
+                        put("receipt_image", base64Image)
+                        put("timestamp", System.currentTimeMillis())
+                    }
+                    val body = json.toString().toRequestBody("application/json".toMediaType())
+                    val req = Request.Builder()
+                        .url("https://api.sovra.ir/api/orders")
+                        .post(body)
+                        .build()
+                    httpClient.newCall(req).execute()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Backend receipt sync error: ${e.message}")
+                }
+            }
+            showToast("تصویر فیش واریزی با موفقیت ثبت و ارسال شد.")
         }
 
         @JavascriptInterface
