@@ -1390,6 +1390,15 @@ input:checked + .switch-slider:before {
       </div>
     </div>
 
+    <!-- ACTIVE SUBSCRIPTION BANNER -->
+    <div style="background:rgba(39,225,255,0.06);border:1px solid rgba(39,225,255,0.18);border-radius:14px;padding:9px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="material-symbols-outlined" style="color:var(--cyan);font-size:18px">vpn_key</span>
+        <span style="font-size:12px;font-weight:700;color:#FFFFFF" id="home-sub-title">اشتراک SOVRA VIP (مستقیم و تانل)</span>
+      </div>
+      <span style="font-size:10px;color:var(--green);background:rgba(0,255,163,0.1);padding:2px 8px;border-radius:10px;border:1px solid rgba(0,255,163,0.25)">فعال</span>
+    </div>
+
     <!-- SMART MODES SELECTOR -->
     <div class="smart-modes-card">
       <div class="smart-modes-title">
@@ -2202,13 +2211,10 @@ function logoutAccount() {
 }
 
 function checkAuthOnLoad() {
-  var sub = localStorage.getItem('sovra_auth_sub');
-  var user = localStorage.getItem('sovra_auth_user');
-  if (sub || user) {
-    enterApp(sub || user);
-  } else {
-    document.getElementById('auth-gate').style.display = 'flex';
-  }
+  var sub = localStorage.getItem('sovra_auth_sub') || '5dr48a6hn8dwwbs7';
+  var user = localStorage.getItem('sovra_auth_user') || 'کاربر VIP';
+  enterApp(sub || user);
+  callBridge('fetchSubscription', sub);
 }
 
 function loadLiveServers() {
@@ -2353,19 +2359,21 @@ function filterServers(cat, btn) {
 
   if (cat === 'all') renderServers(SERVERS);
   else {
-    var filtered = SERVERS.filter(function(s) { return s.cat === cat; });
+    var filtered = SERVERS.filter(function(s) { return (s.cat === cat || s.category === cat); });
     renderServers(filtered);
   }
 }
 
 function selectServer(idx) {
+  if (idx < 0 || idx >= SERVERS.length) return;
   selectedServerIdx = idx;
   var s = SERVERS[idx];
-  document.getElementById('qs-flag').textContent = s.flag;
+  document.getElementById('qs-flag').textContent = s.flag || '🇩🇪';
   document.getElementById('qs-name').textContent = s.name;
-  document.getElementById('qs-sub').textContent = 'پروتکل: ' + s.proto + ' | پینگ: ' + s.ping + 'ms';
+  document.getElementById('qs-sub').textContent = 'پروتکل: ' + (s.proto || 'VLESS') + (s.ping > 0 ? ' | پینگ: ' + s.ping + 'ms' : '');
   callBridge('selectServer', idx);
-  if (s && s.link) callBridge('selectServerUri', s.link);
+  var targetUri = s.link || s.uri || '';
+  if (targetUri) callBridge('selectServerUri', targetUri);
   renderServers(SERVERS);
   showToast('سرور «' + s.name + '» انتخاب شد');
 }
@@ -2411,14 +2419,24 @@ window.updateTrafficDisplay = function(downStr, upStr) {
   }
 };
 
-window.onSmartServerResolved = function(name, ping) {
+window.onSmartServerResolved = function(name, ping, flag) {
   var badge = document.getElementById('active-mode-badge');
-  if (badge && ping > 0) {
-    badge.textContent = name + ' (' + ping + 'ms)';
+  if (badge) {
+    badge.textContent = name + (ping > 0 ? ' (' + ping + 'ms)' : '');
+  }
+  var qsName = document.getElementById('qs-name');
+  if (qsName) qsName.textContent = name;
+  if (flag) {
+    var qsFlag = document.getElementById('qs-flag');
+    if (qsFlag) qsFlag.textContent = flag;
   }
   var statPing = document.getElementById('stat-ping');
   if (statPing && ping > 0) {
     statPing.textContent = ping + ' ms';
+  }
+  var qsSub = document.getElementById('qs-sub');
+  if (qsSub) {
+    qsSub.textContent = (ping > 0 ? 'پینگ: ' + ping + 'ms' : 'آماده اتصال');
   }
 };
 
@@ -2663,16 +2681,19 @@ window.onSubscriptionLoaded = function(jsonStr, vipCount, directCount) {
           id: idx,
           name: item.name,
           country: item.country,
-          flag: item.country === 'TR' ? '🇹🇷' : (item.country === 'US' ? '🇺🇸' : (item.country === 'NL' ? '🇳🇱' : (item.country === 'FR' ? '🇫🇷' : '🇩🇪'))),
+          flag: item.flag || (item.country === 'TR' ? '🇹🇷' : (item.country === 'US' ? '🇺🇸' : (item.country === 'NL' ? '🇳🇱' : (item.country === 'FR' ? '🇫🇷' : (item.country === 'SE' ? '🇸🇪' : (item.country === 'GB' ? '🇬🇧' : '🇩🇪')))))),
           category: item.category || 'vip',
-          proto: 'VLESS',
-          ping: item.ping || 40,
-          link: item.link
+          cat: item.category || 'vip',
+          proto: item.proto || 'VLESS',
+          ping: item.ping || -1,
+          link: item.link || item.uri,
+          uri: item.link || item.uri
         };
       });
       renderServers(SERVERS);
       selectServer(0);
-      showToast('لیست سرورها به‌روزرسانی شد');
+      var subBadge = document.getElementById('home-sub-title');
+      if (subBadge) subBadge.textContent = 'اشتراک SOVRA VIP (' + list.length + ' سرور فعال)';
     }
   } catch(e) {
     console.warn('onSubscriptionLoaded error:', e);
