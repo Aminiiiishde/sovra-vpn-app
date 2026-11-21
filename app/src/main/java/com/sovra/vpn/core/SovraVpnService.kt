@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.TrafficStats
 import android.net.VpnService
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -46,13 +47,24 @@ class SovraVpnService : VpnService() {
                 setMtu(1500)
                 addAddress("172.19.0.1", 30)
                 addRoute("0.0.0.0", 0)
+                try {
+                    addAddress("fdfe:dcba:9876::1", 126)
+                    addRoute("::", 0)
+                } catch (_: Exception) {}
                 addDnsServer("1.1.1.1")
                 addDnsServer("8.8.8.8")
+                setBlocking(false)
                 try {
                     addDisallowedApplication(packageName)
                 } catch (e: Exception) {
                     Log.w(TAG, "addDisallowedApplication failed: ${e.message}")
                 }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                try {
+                    setUnderlyingNetworks(null)
+                } catch (_: Exception) {}
             }
 
             val pfd = builder.establish()
