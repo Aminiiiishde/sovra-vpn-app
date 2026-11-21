@@ -52,7 +52,7 @@ object ConfigGenerator {
         root.put("policy", policy)
         root.put("stats", JSONObject())
 
-        // 3. Inbounds: socks (for local proxy) AND tun (for device-wide VPN)
+        // 3. Inbounds: socks (local port 10808) AND tun (xray0)
         val inbounds = JSONArray()
 
         val socksInbound = JSONObject().apply {
@@ -96,10 +96,23 @@ object ConfigGenerator {
         inbounds.put(tunInbound)
         root.put("inbounds", inbounds)
 
-        // 4. Outbounds: proxy first, then direct freedom, then block blackhole
+        // 4. Outbounds: proxy, dns-out, direct, block
         val outbounds = JSONArray()
+
+        // 4.1 Proxy outbound (1st priority)
         outbounds.put(generateProxyOutbound(uri, cleanIp))
 
+        // 4.2 DNS Outbound (CRITICAL: intercepts port 53 and resolves via encrypted proxy)
+        val dnsOutbound = JSONObject().apply {
+            put("tag", "dns-out")
+            put("protocol", "dns")
+            put("settings", JSONObject().apply {
+                put("network", "tcp")
+            })
+        }
+        outbounds.put(dnsOutbound)
+
+        // 4.3 Direct outbound for LAN & direct bypass
         val directOutbound = JSONObject().apply {
             put("tag", "direct")
             put("protocol", "freedom")
@@ -107,11 +120,16 @@ object ConfigGenerator {
             put("streamSettings", JSONObject().apply {
                 put("sockopt", JSONObject().apply {
                     put("domainStrategy", "UseIP")
+                    put("happyEyeballs", JSONObject().apply {
+                        put("tryDelayMs", 250)
+                        put("interleave", 2)
+                    })
                 })
             })
         }
         outbounds.put(directOutbound)
 
+        // 4.4 Block outbound for ad/malware
         val blockOutbound = JSONObject().apply {
             put("tag", "block")
             put("protocol", "blackhole")
@@ -122,17 +140,45 @@ object ConfigGenerator {
         outbounds.put(blockOutbound)
         root.put("outbounds", outbounds)
 
-        // 5. Routing
+        // 5. Routing: Send port 53 to dns-out, private IP to direct, all other to proxy
         val routing = JSONObject().apply {
-            put("domainStrategy", "AsIs")
-            put("rules", JSONArray())
+            put("domainStrategy", "IPIfNonMatch")
+            val rules = JSONArray()
+
+            // DNS rule: Route port 53 from tun and socks to dns-out
+            val dnsRule = JSONObject().apply {
+                put("type", "field")
+                put("inboundTag", JSONArray().apply {
+                    put("tun")
+                    put("socks")
+                })
+                put("outboundTag", "dns-out")
+                put("port", "53")
+            }
+            rules.put(dnsRule)
+
+            // Private network bypass
+            val privateRule = JSONObject().apply {
+                put("type", "field")
+                put("outboundTag", "direct")
+                put("ip", JSONArray().apply {
+                    put("geoip:private")
+                })
+            }
+            rules.put(privateRule)
+
+            put("rules", rules)
         }
         root.put("routing", routing)
 
-        // 6. DNS (matching v2rayNG v2ray_config_with_tun.json)
+        // 6. DNS: Clean upstream DNS servers queried through the proxy
         val dns = JSONObject().apply {
             put("hosts", JSONObject())
-            put("servers", JSONArray())
+            val servers = JSONArray().apply {
+                put("1.1.1.1")
+                put("8.8.8.8")
+            }
+            put("servers", servers)
         }
         root.put("dns", dns)
 
@@ -200,7 +246,7 @@ object ConfigGenerator {
         val serviceName = queryMap["serviceName"] ?: path
         val mode = queryMap["mode"] ?: "auto"
 
-        // Xray v26 safety: If security is none but encryption is none, auto upgrade to TLS if sni or port suggests
+        // Xray v26 safety: Auto upgrade to TLS if sni/port suggests
         if (security == "none" && encryption == "none") {
             if (port == 443 || port == 8443 || port == 2053 || port == 2083 || port == 2087 || port == 2096 || sni.isNotEmpty()) {
                 security = "tls"
