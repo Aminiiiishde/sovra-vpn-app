@@ -81,7 +81,7 @@ class SovraVpnService : VpnService() {
             var lastTime = System.currentTimeMillis()
 
             while (isActive) {
-                delay(2000)
+                delay(1500)
                 val nowTime = System.currentTimeMillis()
                 val currentRx = TrafficStats.getTotalRxBytes()
                 val currentTx = TrafficStats.getTotalTxBytes()
@@ -98,10 +98,11 @@ class SovraVpnService : VpnService() {
                 lastTx = currentTx
                 lastTime = nowTime
 
-                val downStr = String.format("%.2f MB/s", rxSpeed)
-                val upStr = String.format("%.2f MB/s", txSpeed)
+                val downStr = if (rxSpeed >= 0.1) String.format("%.1f MB/s", rxSpeed) else String.format("%.0f KB/s", rxSpeed * 1024)
+                val upStr = if (txSpeed >= 0.1) String.format("%.1f MB/s", txSpeed) else String.format("%.0f KB/s", txSpeed * 1024)
 
                 updateForegroundNotification("دانلود: $downStr | آپلود: $upStr")
+                MainActivity.instance?.pushLiveStats(downStr, upStr)
             }
         }
     }
