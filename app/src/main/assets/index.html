@@ -1318,40 +1318,23 @@ input:checked + .switch-slider:before {
     <div class="auth-box">
       <div class="auth-logo-badge"><span>S</span></div>
       <h2>ورود به SOVRA VPN</h2>
-      <p>جهت بارگذاری سرورها و استفاده از اپلیکیشن وارد شوید</p>
+      <p>لطفاً لینک یا شناسه ساب‌اسکریپشن خود را وارد کنید</p>
 
-      <div class="auth-tab-btn-wrap">
-        <div class="auth-tab-btn active" id="tab-btn-sub" onclick="switchAuthTab('sub')">ورود با سابسکریپشن</div>
-        <div class="auth-tab-btn" id="tab-btn-acc" onclick="switchAuthTab('acc')">نام کاربری و رمز</div>
-      </div>
-
-      <!-- SUB FORM -->
+      <!-- SUB FORM ONLY -->
       <div id="auth-sub-sec">
         <div class="auth-form-group">
-          <label for="sub-input">شناسه ساب (Sub ID) یا لینک اشتراک:</label>
-          <input type="text" id="sub-input" class="auth-input" placeholder="مثال: 5dr48a6hn8dwwbs7">
+          <label for="sub-input">لینک ساب، توکن یا کانفیگ:</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="sub-input" class="auth-input" placeholder="مثال: 5dr48a6hn8dwwbs7 یا https://..." style="flex:1;">
+            <button type="button" onclick="pasteSubFromClipboard()" style="background:rgba(0,240,255,0.15);border:1px solid #00F0FF;color:#00F0FF;border-radius:10px;padding:12px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+              📋 چسباندن
+            </button>
+          </div>
         </div>
-        <button class="btn-auth-submit" onclick="loginWithSub()">
-          ورود و دریافت کانفیگ‌ها
+        <button class="btn-auth-submit" id="btn-sub-login" onclick="loginWithSub()">
+          ورود و بارگذاری سرورها
         </button>
       </div>
-
-      <!-- USER/PASS FORM -->
-      <div id="auth-acc-sec" style="display:none">
-        <div class="auth-form-group">
-          <label for="user-input">نام کاربری:</label>
-          <input type="text" id="user-input" class="auth-input" placeholder="Username">
-        </div>
-        <div class="auth-form-group">
-          <label for="pass-input">کلمه عبور:</label>
-          <input type="password" id="pass-input" class="auth-input" placeholder="Password">
-        </div>
-        <button class="btn-auth-submit" onclick="loginWithCredentials()">
-          ورود به حساب کاربری
-        </button>
-      </div>
-
-<!-- Free trial removed from app per request -->
     </div>
   </div>
 
@@ -2142,22 +2125,20 @@ function callBridge(funcName, arg1, arg2) {
 }
 
 /* ═══ AUTH GATE FUNCTIONS ═══ */
-function switchAuthTab(tab) {
-  var btnSub = document.getElementById('tab-btn-sub');
-  var btnAcc = document.getElementById('tab-btn-acc');
-  var secSub = document.getElementById('auth-sub-sec');
-  var secAcc = document.getElementById('auth-acc-sec');
-
-  if (tab === 'sub') {
-    btnSub.classList.add('active');
-    btnAcc.classList.remove('active');
-    secSub.style.display = 'block';
-    secAcc.style.display = 'none';
+function pasteSubFromClipboard() {
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    navigator.clipboard.readText().then(function(text) {
+      if (text && text.trim()) {
+        document.getElementById('sub-input').value = text.trim();
+        showToast('متن از کلیپ‌بورد جایگذاری شد');
+      } else {
+        showToast('کلیپ‌بورد خالی است');
+      }
+    }).catch(function() {
+      showToast('لطفاً دستی جایگذاری کنید');
+    });
   } else {
-    btnSub.classList.remove('active');
-    btnAcc.classList.add('active');
-    secSub.style.display = 'none';
-    secAcc.style.display = 'block';
+    showToast('لطفاً دستی در کادر جایگذاری نمایید');
   }
 }
 
@@ -2167,51 +2148,30 @@ function loginWithSub() {
     alert('لطفاً شناسه سابسکریپشن یا لینک خود را وارد کنید.');
     return;
   }
-  // Extract sub id if user pasted full url
-  var subId = val;
-  if (val.indexOf('/subs/') !== -1) {
-    subId = val.split('/subs/')[1].split('?')[0].split('#')[0];
-  } else if (val.indexOf('/sub/') !== -1) {
-    subId = val.split('/sub/')[1].split('?')[0].split('#')[0];
+  var btn = document.getElementById('btn-sub-login');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'در حال بارگذاری سرورها...';
   }
 
-  currentSubId = subId;
-  localStorage.setItem('sovra_auth_sub', subId);
-  localStorage.setItem('sovra_auth_type', 'sub');
-  enterApp(subId);
-  callBridge('fetchSubscription', subId);
-  showToast('ورود با سابسکریپشن موفقیت‌آمیز بود!');
-}
+  currentSubId = val;
+  localStorage.setItem('sovra_auth_sub', val);
+  localStorage.removeItem('sovra_auth_user');
+  localStorage.removeItem('sovra_auth_type');
 
-function loginWithCredentials() {
-  var u = document.getElementById('user-input').value.trim();
-  var p = document.getElementById('pass-input').value.trim();
-  if (!u || !p) {
-    alert('لطفاً نام کاربری و رمز عبور را وارد کنید.');
-    return;
-  }
-
-  localStorage.setItem('sovra_auth_user', u);
-  localStorage.setItem('sovra_auth_type', 'user');
-  currentSubId = "5dr48a6hn8dwwbs7";
-  enterApp(u);
-  showToast('ورود به حساب کاربری با موفقیت انجام شد!');
-}
-
-function activateAuthTrial() {
-  currentSubId = "5dr48a6hn8dwwbs7";
-  localStorage.setItem('sovra_auth_sub', currentSubId);
-  localStorage.setItem('sovra_auth_type', 'trial');
-  enterApp('اکانت تست ۲۴ ساعته');
-  showToast('اشتراک تست ۲۴ ساعته فعال گردید!');
-  callBridge('startFreeTrial');
+  enterApp(val);
+  callBridge('fetchSubscription', val);
 }
 
 function enterApp(identity) {
-  document.getElementById('auth-gate').style.display = 'none';
-  document.getElementById('acc-username').textContent = 'کاربر: ' + identity;
-  document.getElementById('acc-sub-id').textContent = currentSubId;
-  document.getElementById('sub-badge-text').textContent = 'اشتراک متصل';
+  var gate = document.getElementById('auth-gate');
+  if (gate) gate.style.display = 'none';
+  var elAccUser = document.getElementById('acc-username');
+  if (elAccUser) elAccUser.textContent = 'کاربر: ' + identity;
+  var elAccSub = document.getElementById('acc-sub-id');
+  if (elAccSub) elAccSub.textContent = currentSubId;
+  var elBadge = document.getElementById('sub-badge-text');
+  if (elBadge) elBadge.textContent = 'اشتراک متصل';
   loadLiveServers();
 }
 
@@ -2219,23 +2179,26 @@ function logoutAccount() {
   localStorage.removeItem('sovra_auth_sub');
   localStorage.removeItem('sovra_auth_user');
   localStorage.removeItem('sovra_auth_type');
-  document.getElementById('auth-gate').style.display = 'flex';
+  var gate = document.getElementById('auth-gate');
+  if (gate) gate.style.display = 'flex';
+  var btn = document.getElementById('btn-sub-login');
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = 'ورود و بارگذاری سرورها';
+  }
   if (connState !== 0) toggleConnect();
   showToast('از حساب کاربری خارج شدید');
 }
 
 function checkAuthOnLoad() {
+  localStorage.removeItem('sovra_auth_user');
+  localStorage.removeItem('sovra_auth_type');
   var sub = localStorage.getItem('sovra_auth_sub');
-  var user = localStorage.getItem('sovra_auth_user');
   if (sub && sub.trim()) {
     currentSubId = sub.trim();
     enterApp(currentSubId);
     callBridge('fetchSubscription', currentSubId);
-  } else if (user && user.trim()) {
-    enterApp(user.trim());
-    if (currentSubId) callBridge('fetchSubscription', currentSubId);
   } else {
-    // Show auth gate and require user to login
     var gate = document.getElementById('auth-gate');
     if (gate) gate.style.display = 'flex';
   }
@@ -2403,7 +2366,7 @@ function selectServer(idx) {
 }
 
 function pingAllServers() {
-  showToast('در حال تست پینگ زنده و واقعی سرورها...');
+  showToast('در حال سنجش پینگ واقعی سرورها...');
   var uris = SERVERS.map(function(s){ return s.link || ''; });
   SERVERS.forEach(function(s, idx) {
     var el = document.getElementById('srv-ping-' + idx);
@@ -2412,6 +2375,7 @@ function pingAllServers() {
     }
   });
   callBridge('testAllPing', JSON.stringify(uris));
+  callBridge('pingAllServers', '');
 }
 
 window.updatePing = function(idx, ping) {
@@ -2733,16 +2697,16 @@ window.addEventListener('DOMContentLoaded', function() {
   updatePriceDisplay('eco', 10);
 });
 
-window.onSubscriptionLoaded = function(jsonStr, vipCount, directCount) {
+window.onSubscriptionLoaded = function(jsonStr, vipCount, directCount, accountName) {
   try {
-    var list = JSON.parse(jsonStr);
+    var list = (typeof jsonStr === 'string') ? JSON.parse(jsonStr) : jsonStr;
     if (list && list.length > 0) {
       SERVERS = list.map(function(item, idx) {
         return {
           id: idx,
           name: item.name,
           country: item.country,
-          flag: item.flag || (item.country === 'TR' ? '🇹🇷' : (item.country === 'US' ? '🇺🇸' : (item.country === 'NL' ? '🇳🇱' : (item.country === 'FR' ? '🇫🇷' : (item.country === 'SE' ? '🇸🇪' : (item.country === 'GB' ? '🇬🇧' : '🇩🇪')))))),
+          flag: item.flag || '🌐',
           category: item.category || 'vip',
           cat: item.category || 'vip',
           proto: item.proto || 'VLESS',
@@ -2750,6 +2714,29 @@ window.onSubscriptionLoaded = function(jsonStr, vipCount, directCount) {
           link: item.link || item.uri,
           uri: item.link || item.uri
         };
+      });
+      renderServers(SERVERS);
+      selectServer(0);
+
+      var displayName = accountName || ('اشتراک SOVRA (' + list.length + ' سرور)');
+      var subBadge = document.getElementById('home-sub-title');
+      if (subBadge) subBadge.textContent = displayName;
+      var elAccUser = document.getElementById('acc-username');
+      if (elAccUser) elAccUser.textContent = 'اشتراک: ' + displayName;
+      var elBadgeText = document.getElementById('sub-badge-text');
+      if (elBadgeText) elBadgeText.textContent = displayName;
+
+      showToast(list.length + ' سرور فعال با موفقیت بارگذاری گردید');
+    }
+  } catch(e) {
+    console.warn('onSubscriptionLoaded error:', e);
+  }
+  var btn = document.getElementById('btn-sub-login');
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = 'ورود و بارگذاری سرورها';
+  }
+};
       });
       renderServers(SERVERS);
       selectServer(0);
