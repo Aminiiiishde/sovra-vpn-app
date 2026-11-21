@@ -3,7 +3,11 @@ package com.sovra.vpn
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.os.Build
+import android.util.Log
+import go.Seq
+import libv2ray.Libv2ray
 
 class SovraApp : Application() {
 
@@ -17,6 +21,17 @@ class SovraApp : Application() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+
+        try {
+            Seq.setContext(applicationContext)
+            val assetDir = getDir("assets", Context.MODE_PRIVATE)
+            val assetPath = assetDir.absolutePath
+            val deviceId = "sovra_xudp_device_key"
+            Libv2ray.initCoreEnv(assetPath, deviceId)
+            Log.i("SovraApp", "Libv2ray.initCoreEnv initialized successfully at $assetPath")
+        } catch (e: Throwable) {
+            Log.e("SovraApp", "Failed to init Libv2ray env: ${e.message}", e)
+        }
     }
 
     private fun createNotificationChannel() {
