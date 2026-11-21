@@ -42,7 +42,6 @@
             android:name=".core.SovraVpnService"
             android:exported="false"
             android:permission="android.permission.BIND_VPN_SERVICE"
-            android:process=":vpn_core"
             android:foregroundServiceType="specialUse">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
