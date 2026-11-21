@@ -26,6 +26,8 @@ class SovraVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private val scope = CoroutineScope(Dispatchers.IO)
     private var tickerJob: Job? = null
+    private var totalDownloadedBytes = 0L
+    private var totalUploadedBytes = 0L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -35,6 +37,7 @@ class SovraVpnService : VpnService() {
             }
             ACTION_DISCONNECT -> {
                 stopTunnel()
+                MainActivity.instance?.notifyVpnDisconnected()
             }
         }
         return START_NOT_STICKY
@@ -42,6 +45,9 @@ class SovraVpnService : VpnService() {
 
     private fun startTunnel(configJson: String) {
         try {
+            totalDownloadedBytes = 0L
+            totalUploadedBytes = 0L
+
             val builder = Builder().apply {
                 setSession("SOVRA VPN VIP")
                 setMtu(1500)
@@ -82,6 +88,7 @@ class SovraVpnService : VpnService() {
         } catch (e: Exception) {
             Log.e(TAG, "VPN start failed: ${e.message}", e)
             stopTunnel()
+            MainActivity.instance?.notifyVpnDisconnected()
         }
     }
 
@@ -93,29 +100,53 @@ class SovraVpnService : VpnService() {
             var lastTime = System.currentTimeMillis()
 
             while (isActive) {
-                delay(1500)
+                delay(1200)
                 val nowTime = System.currentTimeMillis()
                 val currentRx = TrafficStats.getTotalRxBytes()
                 val currentTx = TrafficStats.getTotalTxBytes()
                 val dt = (nowTime - lastTime) / 1000.0
 
-                var rxSpeed = if (dt > 0 && currentRx >= lastRx) ((currentRx - lastRx) / dt) / (1024 * 1024) else 0.0
-                var txSpeed = if (dt > 0 && currentTx >= lastTx) ((currentTx - lastTx) / dt) / (1024 * 1024) else 0.0
+                var rxSpeed = if (dt > 0 && currentRx >= lastRx) (currentRx - lastRx) / dt else 0.0
+                var txSpeed = if (dt > 0 && currentTx >= lastTx) (currentTx - lastTx) / dt else 0.0
 
                 val (xDown, xUp) = XrayBridge.queryTrafficStats()
-                if (xDown > 0 && dt > 0) rxSpeed = (xDown / dt) / (1024 * 1024)
-                if (xUp > 0 && dt > 0) txSpeed = (xUp / dt) / (1024 * 1024)
+                if (xDown > 0 && dt > 0) rxSpeed = xDown / dt
+                if (xUp > 0 && dt > 0) txSpeed = xUp / dt
+
+                if (dt > 0) {
+                    totalDownloadedBytes += (rxSpeed * dt).toLong()
+                    totalUploadedBytes += (txSpeed * dt).toLong()
+                }
 
                 lastRx = currentRx
                 lastTx = currentTx
                 lastTime = nowTime
 
-                val downStr = if (rxSpeed >= 0.1) String.format("%.1f MB/s", rxSpeed) else String.format("%.0f KB/s", rxSpeed * 1024)
-                val upStr = if (txSpeed >= 0.1) String.format("%.1f MB/s", txSpeed) else String.format("%.0f KB/s", txSpeed * 1024)
+                val downStr = formatSpeed(rxSpeed)
+                val upStr = formatSpeed(txSpeed)
+                val totalStr = formatBytes(totalDownloadedBytes + totalUploadedBytes)
 
-                updateForegroundNotification("دانلود: $downStr | آپلود: $upStr")
-                MainActivity.instance?.pushLiveStats(downStr, upStr)
+                updateForegroundNotification("↓ $downStr  ↑ $upStr • مصرف: $totalStr")
+                MainActivity.instance?.pushLiveStats(downStr, upStr, totalStr)
             }
+        }
+    }
+
+    private fun formatSpeed(bytesPerSec: Double): String {
+        return when {
+            bytesPerSec >= 1024 * 1024 -> String.format("%.1f MB/s", bytesPerSec / (1024 * 1024))
+            bytesPerSec >= 1024 -> String.format("%.0f KB/s", bytesPerSec / 1024)
+            bytesPerSec > 0 -> String.format("%.0f B/s", bytesPerSec)
+            else -> "0 KB/s"
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        return when {
+            bytes >= 1024L * 1024L * 1024L -> String.format("%.2f GB", bytes.toDouble() / (1024L * 1024L * 1024L))
+            bytes >= 1024L * 1024L -> String.format("%.1f MB", bytes.toDouble() / (1024L * 1024L))
+            bytes >= 1024L -> String.format("%.0f KB", bytes.toDouble() / 1024L)
+            else -> "$bytes B"
         }
     }
 
@@ -128,11 +159,21 @@ class SovraVpnService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // One-click Disconnect Action inside notification
+        val disconnectIntent = Intent(this, SovraVpnService::class.java).apply {
+            action = ACTION_DISCONNECT
+        }
+        val disconnectPendingIntent = PendingIntent.getService(
+            this, 1, disconnectIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification = NotificationCompat.Builder(this, SovraApp.CHANNEL_ID)
-            .setContentTitle("سپر امنیتی SOVRA VPN فعال است")
+            .setContentTitle("سپر امنیتی SOVRA VPN (متصل)")
             .setContentText(statsText)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "قطع اتصال", disconnectPendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
