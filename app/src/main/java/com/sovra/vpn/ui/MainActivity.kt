@@ -1,7 +1,6 @@
 package com.sovra.vpn.ui
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.net.VpnService
@@ -11,22 +10,31 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Base64
 import android.util.Log
-import android.view.View
-import android.webkit.*
+import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.sovra.vpn.core.ConfigGenerator
 import com.sovra.vpn.core.SovraVpnService
 import com.sovra.vpn.core.XrayBridge
-import kotlinx.coroutines.*
-import okhttp3.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URLDecoder
@@ -37,7 +45,7 @@ data class ServerItem(
     val name: String,
     val flag: String,
     val country: String,
-    val category: String,
+    val category: String, // "vip" or "direct"
     val proto: String,
     var ping: Int,
     val link: String
@@ -48,50 +56,38 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "MainActivity"
         var instance: MainActivity? = null
-            private set
     }
 
     private lateinit var webView: WebView
     private var isConnected = false
-    private var pendingConnect = false
+    private var selectedServerUri: String = ""
     private var currentMode = "fastest" // "fastest", "static", "gaming"
+    private var staticLockedUri: String = ""
+    private var subscriptionAccountName: String = "کاربر SOVRA"
 
     private val parsedServers = mutableListOf<ServerItem>()
-    private var selectedServerUri = ""
-    private var staticLockedUri = ""
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
 
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .build()
-
-    fun getWebView(): WebView? = if (::webView.isInitialized) webView else null
-
-    fun notifyVpnDisconnected() {
-        isConnected = false
-        runOnUiThread {
-            webView.evaluateJavascript("if(typeof setConnState === 'function') setConnState(false);", null)
-        }
-    }
-
-    fun pushLiveStats(downStr: String, upStr: String, totalStr: String) {
-        runOnUiThread {
-            webView.evaluateJavascript(
-                "if(typeof updateTrafficDisplay === 'function') updateTrafficDisplay('$downStr', '$upStr', '$totalStr');",
-                null
-            )
-        }
-    }
-
+    private var pendingConnect = false
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == RESULT_OK && pendingConnect) {
-            doStartVpn()
+        if (result.resultCode == RESULT_OK) {
+            if (pendingConnect) {
+                pendingConnect = false
+                doStartVpn()
+            }
+        } else {
+            pendingConnect = false
+            Toast.makeText(this, "دسترسی VPN برای اتصال ضروری است", Toast.LENGTH_SHORT).show()
+            notifyVpnDisconnected()
         }
-        pendingConnect = false
     }
 
     private val filePickerLauncher = registerForActivityResult(
@@ -155,6 +151,9 @@ class MainActivity : ComponentActivity() {
 
         root.addView(webView)
         setContentView(root)
+
+        // Initialize Xray native environment with app internal assets directory
+        XrayBridge.initEnv(applicationContext)
 
         webView.loadUrl("file:///android_asset/index.html")
     }
@@ -248,12 +247,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Resolves the best server matching the user's selected mode:
-     * - "fastest": Runs a download throughput test of a small chunk (KB/s) and picks the fastest!
-     * - "static": Picks one stable European server (Germany/Sweden/UK) and locks onto it.
-     * - "gaming": Runs multiple probes, computes latency + jitter, picks lowest latency & jitter.
-     */
     private suspend fun resolveServerForCurrentMode(): String = withContext(Dispatchers.IO) {
         if (parsedServers.isEmpty()) return@withContext ""
 
@@ -262,7 +255,6 @@ class MainActivity : ComponentActivity() {
                 if (staticLockedUri.isNotEmpty() && parsedServers.any { it.link == staticLockedUri }) {
                     return@withContext staticLockedUri
                 }
-                // Pick stable EU server
                 val preferred = parsedServers.find {
                     val n = it.name.lowercase()
                     n.contains("germany") || n.contains("de") || n.contains("sweden") || n.contains("uk") || n.contains("آلمان")
@@ -271,7 +263,6 @@ class MainActivity : ComponentActivity() {
                 preferred.link
             }
             "gaming" -> {
-                // Test 3 probes for latency and jitter on top candidates
                 val candidates = parsedServers.take(8)
                 var bestCandidate = candidates[0]
                 var bestScore = Long.MAX_VALUE
@@ -292,15 +283,15 @@ class MainActivity : ComponentActivity() {
                 bestCandidate.link
             }
             else -> {
-                // "fastest": Test real download speed of small chunk
+                // "fastest"
                 val candidates = parsedServers.take(6)
                 var bestCandidate = candidates[0]
-                var bestSpeedKbs = -1.0
+                var bestPing = Long.MAX_VALUE
 
                 for (cand in candidates) {
-                    val speed = measureDownloadSpeed(cand.link)
-                    if (speed > bestSpeedKbs) {
-                        bestSpeedKbs = speed
+                    val p = measureRealDelay(cand.link)
+                    if (p in 1 until bestPing) {
+                        bestPing = p
                         bestCandidate = cand
                     }
                 }
@@ -309,32 +300,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Measures real download speed of a small HTTP chunk through server config.
-     */
-    private fun measureDownloadSpeed(uri: String): Double {
-        return try {
-            val parts = uri.split("#")[0].removePrefix("vless://").removePrefix("vmess://").removePrefix("trojan://")
-            val hostPort = if (parts.contains("@")) parts.split("@")[1].split("?")[0].split(":") else parts.split("?")[0].split(":")
-            val host = hostPort[0]
-            val port = hostPort.getOrNull(1)?.toIntOrNull() ?: 443
-
-            val t0 = System.currentTimeMillis()
-            val socket = Socket()
-            socket.connect(InetSocketAddress(host, port), 2500)
-            val dt = System.currentTimeMillis() - t0
-            socket.close()
-
-            // Inverse of connect time in KB/s estimation
-            if (dt > 0) (1000.0 / dt) * 50.0 else 100.0
-        } catch (_: Exception) {
-            0.0
+    fun notifyVpnDisconnected() {
+        isConnected = false
+        runOnUiThread {
+            webView.evaluateJavascript("if(typeof setConnState === 'function') setConnState(false);", null)
         }
     }
 
-    /**
-     * Real delay measurement combining direct TCP connect time and Xray native measurement.
-     */
+    fun updateLiveTraffic(downSpeed: String, totalVolume: String) {
+        runOnUiThread {
+            webView.evaluateJavascript("if(typeof updateTrafficDisplay === 'function') updateTrafficDisplay('$downSpeed', '$totalVolume');", null)
+        }
+    }
+
     private fun measureRealDelay(uri: String): Long {
         var delay = -1L
         try {
@@ -370,33 +348,45 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun doFetchSubscription(subInput: String) {
-        var subUrl = subInput.trim()
-        if (!subUrl.startsWith("http://") && !subUrl.startsWith("https://")) {
-            var cleanId = subUrl
-            if (cleanId.contains("/subs/")) cleanId = cleanId.split("/subs/")[1].split("?")[0]
-            if (cleanId.contains("/sub/")) cleanId = cleanId.split("/sub/")[1].split("?")[0]
-            subUrl = "https://sub.aminishere.shop/subs/$cleanId"
+        val input = subInput.trim()
+        var decodedText = ""
+
+        if (input.startsWith("vless://") || input.startsWith("vmess://") || input.startsWith("trojan://") || input.startsWith("ss://")) {
+            decodedText = input
+        } else if (!input.startsWith("http://") && !input.startsWith("https://") && input.length > 50 && !input.contains("/") && !input.contains(" ")) {
+            try {
+                val bytes = Base64.decode(input, Base64.DEFAULT or Base64.NO_WRAP)
+                decodedText = String(bytes)
+            } catch (_: Exception) {}
         }
 
-        Log.d(TAG, "Fetching subscription from: $subUrl")
-        val req = Request.Builder()
-            .url(subUrl)
-            .header("User-Agent", "v2rayNG/1.8.19")
-            .build()
+        if (decodedText.isEmpty()) {
+            var subUrl = input
+            if (!subUrl.startsWith("http://") && !subUrl.startsWith("https://")) {
+                var cleanId = subUrl
+                if (cleanId.contains("/subs/")) cleanId = cleanId.split("/subs/")[1].split("?")[0]
+                if (cleanId.contains("/sub/")) cleanId = cleanId.split("/sub/")[1].split("?")[0]
+                subUrl = "https://sub.aminishere.shop/subs/$cleanId"
+            }
 
-        val resp = httpClient.newCall(req).execute()
-        val rawBody = resp.body?.string() ?: ""
+            Log.d(TAG, "Fetching subscription from: $subUrl")
+            val req = Request.Builder()
+                .url(subUrl)
+                .header("User-Agent", "v2rayNG/1.8.19")
+                .build()
 
-        var decodedText = rawBody
-        try {
-            val bytes = Base64.decode(rawBody.trim(), Base64.DEFAULT)
-            decodedText = String(bytes)
-        } catch (_: Exception) {}
+            val resp = httpClient.newCall(req).execute()
+            val rawBody = resp.body?.string() ?: ""
+
+            decodedText = rawBody
+            try {
+                val bytes = Base64.decode(rawBody.trim(), Base64.DEFAULT or Base64.NO_WRAP)
+                decodedText = String(bytes)
+            } catch (_: Exception) {}
+        }
 
         val lines = decodedText.lines().map { it.trim() }.filter { link ->
-            (link.startsWith("vless://") || link.startsWith("vmess://") || link.startsWith("trojan://") || link.startsWith("ss://"))
-            && !link.contains("nothing.to.cash")
-            && !link.contains("127.0.0.1")
+            link.startsWith("vless://") || link.startsWith("vmess://") || link.startsWith("trojan://") || link.startsWith("ss://")
         }
 
         val serverArray = JSONArray()
@@ -416,12 +406,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Do NOT overwrite user remark! Keep exact remark from subscription!
             val cleanTitle = if (rawRemark.isNotBlank()) rawRemark else "سرور ${index + 1}"
 
-            // Extract country flag emoji from remark if present
+            // Check if this node is an info/account header node (e.g. nothing.to.cash or 127.0.0.1)
+            val isInfoNode = link.contains("nothing.to.cash") || link.contains("127.0.0.1") ||
+                    cleanTitle.contains("حجم") || cleanTitle.contains("انقضا")
+
+            if (isInfoNode) {
+                subscriptionAccountName = cleanTitle
+                return@forEachIndexed // Do not add dummy node to connectable servers list!
+            }
+
             val flagMatcher = flagPattern.matcher(cleanTitle)
-            val flag = if (flagMatcher.find()) flagMatcher.group() else "🌐"
+            val flag = if (flagMatcher.find()) flagMatcher.group() else detectFlagFromName(cleanTitle)
 
             val lower = cleanTitle.lowercase()
             val isTunnel = lower.contains("tunnel") || lower.contains("تانل") || lower.contains("ir-") || lower.contains("iran")
@@ -437,7 +434,7 @@ class MainActivity : ComponentActivity() {
                 link.startsWith("vless://") -> "VLESS"
                 link.startsWith("trojan://") -> "Trojan"
                 link.startsWith("vmess://") -> "VMess"
-                else -> "SS"
+                else -> "Shadowsocks"
             }
 
             val initialPing = -1
@@ -463,8 +460,24 @@ class MainActivity : ComponentActivity() {
 
         runOnUiThread {
             val jsonStr = serverArray.toString().replace("'", "\\'")
-            val js = "if(typeof onSubscriptionLoaded === 'function') onSubscriptionLoaded('$jsonStr', $vipCount, $directCount);"
+            val safeAccountName = subscriptionAccountName.replace("'", "\\'")
+            val js = "if(typeof onSubscriptionLoaded === 'function') onSubscriptionLoaded('$jsonStr', $vipCount, $directCount, '$safeAccountName');"
             webView.evaluateJavascript(js, null)
+        }
+    }
+
+    private fun detectFlagFromName(name: String): String {
+        val lower = name.lowercase()
+        return when {
+            lower.contains("germany") || lower.contains("de") || lower.contains("آلمان") -> "🇩🇪"
+            lower.contains("turkey") || lower.contains("tr") || lower.contains("ترکیه") -> "🇹🇷"
+            lower.contains("sweden") || lower.contains("se") || lower.contains("سوئد") -> "🇸🇪"
+            lower.contains("netherlands") || lower.contains("nl") || lower.contains("هلند") -> "🇳🇱"
+            lower.contains("uk") || lower.contains("united kingdom") || lower.contains("انگلیس") -> "🇬🇧"
+            lower.contains("us") || lower.contains("united states") || lower.contains("آمریکا") -> "🇺🇸"
+            lower.contains("france") || lower.contains("fr") || lower.contains("فرانسه") -> "🇫🇷"
+            lower.contains("iran") || lower.contains("ایران") -> "🇮🇷"
+            else -> "🌐"
         }
     }
 
@@ -486,6 +499,16 @@ class MainActivity : ComponentActivity() {
             if (index in 0 until parsedServers.size) {
                 selectedServerUri = parsedServers[index].link
                 val s = parsedServers[index]
+                showToast("سرور انتخاب شد: ${s.name}")
+            }
+        }
+
+        @JavascriptInterface
+        fun selectServerUri(uri: String) {
+            triggerHaptic()
+            selectedServerUri = uri
+            val s = parsedServers.find { it.link == uri }
+            if (s != null) {
                 showToast("سرور انتخاب شد: ${s.name}")
             }
         }
@@ -542,13 +565,18 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
+        fun testAllPing(urisJson: String = "") {
+            pingAllServers()
+        }
+
+        @JavascriptInterface
         fun fetchSubscription(subInput: String) {
             triggerHaptic()
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     doFetchSubscription(subInput)
                     withContext(Dispatchers.Main) {
-                        showToast("لیست ${parsedServers.size} سرور با موفقیت دریافت شد")
+                        showToast("لیست ${parsedServers.size} سرور با موفقیت بارگذاری شد")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "fetchSubscription failed: ${e.message}", e)
