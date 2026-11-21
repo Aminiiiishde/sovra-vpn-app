@@ -174,14 +174,14 @@ class SovraVpnService : VpnService() {
                 val totalStr = String.format("دانلود: %.1f MB | آپلود: %.1f MB", totalDownMb, totalUpMb)
 
                 val notif = NotificationCompat.Builder(this@SovraVpnService, SovraApp.CHANNEL_ID)
-                    .setSmallIcon(R.drawable.ic_shield_cyber)
+                    .setSmallIcon(R.mipmap.ic_launcher)
                     .setContentTitle("SOVRA VPN متصل است ($downStr)")
                     .setContentText(totalStr)
                     .setStyle(NotificationCompat.BigTextStyle().bigText("وضعیت: فعال و رمزنگاری شده\nسرعت زنده: $downStr\nحجم کل: $totalStr"))
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .setOngoing(true)
                     .setContentIntent(pIntent)
-                    .addAction(R.drawable.ic_shield_cyber, "قطع اتصال", pDisconnectIntent)
+                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "قطع اتصال", pDisconnectIntent)
                     .build()
 
                 startForeground(NOTIFICATION_ID, notif)
