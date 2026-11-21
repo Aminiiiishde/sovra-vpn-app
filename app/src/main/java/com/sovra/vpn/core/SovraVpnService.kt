@@ -51,10 +51,10 @@ class SovraVpnService : VpnService() {
             val builder = Builder().apply {
                 setSession("SOVRA VPN VIP")
                 setMtu(1500)
-                addAddress("172.19.0.1", 30)
+                addAddress("10.10.14.1", 30)
                 addRoute("0.0.0.0", 0)
                 try {
-                    addAddress("fdfe:dcba:9876::1", 126)
+                    addAddress("fc00::10:10:14:1", 126)
                     addRoute("::", 0)
                 } catch (_: Exception) {}
                 addDnsServer("1.1.1.1")
@@ -65,6 +65,12 @@ class SovraVpnService : VpnService() {
                 } catch (e: Exception) {
                     Log.w(TAG, "addDisallowedApplication failed: ${e.message}")
                 }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    builder.setMetered(false)
+                } catch (_: Exception) {}
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
@@ -145,7 +151,7 @@ class SovraVpnService : VpnService() {
         return when {
             bytes >= 1024L * 1024L * 1024L -> String.format("%.2f GB", bytes.toDouble() / (1024L * 1024L * 1024L))
             bytes >= 1024L * 1024L -> String.format("%.1f MB", bytes.toDouble() / (1024L * 1024L))
-            bytes >= 1024L -> String.format("%.0f KB", bytes.toDouble() / 1024L)
+            bytes >= 1024L -> String.format("%.0f KB", bytes.toDouble() / (1024L * 1024L))
             else -> "$bytes B"
         }
     }
