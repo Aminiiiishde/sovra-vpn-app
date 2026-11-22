@@ -1,6 +1,8 @@
 package com.sovra.vpn.core
 
+import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.net.TrafficStats
 import android.net.VpnService
@@ -12,6 +14,7 @@ import com.sovra.vpn.R
 import com.sovra.vpn.SovraApp
 import com.sovra.vpn.ui.MainActivity
 import kotlinx.coroutines.*
+import java.util.Locale
 
 class SovraVpnService : VpnService() {
 
@@ -19,13 +22,20 @@ class SovraVpnService : VpnService() {
         const val ACTION_CONNECT = "com.sovra.vpn.CONNECT"
         const val ACTION_DISCONNECT = "com.sovra.vpn.DISCONNECT"
         const val EXTRA_CONFIG_JSON = "extra_config_json"
+        const val EXTRA_SERVER_NAME = "extra_server_name"
         const val NOTIFICATION_ID = 1001
         private const val TAG = "SovraVpnService"
+
+        @Volatile
+        var isServiceRunning = false
+            private set
     }
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var tickerJob: Job? = null
+    private var currentServerName: String = "سرور امن"
+
     private var totalDownloadedBytes = 0L
     private var totalUploadedBytes = 0L
 
@@ -33,6 +43,8 @@ class SovraVpnService : VpnService() {
         when (intent?.action) {
             ACTION_CONNECT -> {
                 val config = intent.getStringExtra(EXTRA_CONFIG_JSON) ?: ""
+                val serverName = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "سرور امن"
+                currentServerName = serverName
                 startTunnel(config)
             }
             ACTION_DISCONNECT -> {
@@ -45,8 +57,10 @@ class SovraVpnService : VpnService() {
 
     private fun startTunnel(configJson: String) {
         try {
-            totalDownloadedBytes = 0L
-            totalUploadedBytes = 0L
+            Log.d(TAG, "Starting or reconnecting tunnel...")
+
+            // Cleanly stop any running core first
+            XrayBridge.stopCore()
 
             val builder = Builder().apply {
                 setSession("SOVRA VPN")
@@ -62,7 +76,7 @@ class SovraVpnService : VpnService() {
                 try {
                     addDisallowedApplication(applicationContext.packageName)
                 } catch (e: Exception) {
-                    Log.w(TAG, "addDisallowedApplication failed: ${e.message}")
+                    Log.w(TAG, "addDisallowedApplication: ${e.message}")
                 }
             }
 
@@ -78,6 +92,7 @@ class SovraVpnService : VpnService() {
                 } catch (_: Exception) {}
             }
 
+            // Close old interface to apply new parameters cleanly
             try {
                 vpnInterface?.close()
             } catch (_: Exception) {}
@@ -90,8 +105,12 @@ class SovraVpnService : VpnService() {
             val started = XrayBridge.startCore(configJson, tunFd)
             if (!started) {
                 Log.e(TAG, "Failed to start Xray core inside startTunnel!")
+                stopTunnel()
+                MainActivity.instance?.notifyVpnDisconnected()
+                return
             }
 
+            isServiceRunning = true
             startLiveNotificationTicker()
 
         } catch (e: Exception) {
@@ -103,6 +122,7 @@ class SovraVpnService : VpnService() {
 
     private fun stopTunnel() {
         try {
+            isServiceRunning = false
             tickerJob?.cancel()
             tickerJob = null
 
@@ -144,6 +164,8 @@ class SovraVpnService : VpnService() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
             var lastRx = TrafficStats.getTotalRxBytes()
             var lastTx = TrafficStats.getTotalTxBytes()
 
@@ -166,35 +188,56 @@ class SovraVpnService : VpnService() {
                 lastRx = currRx
                 lastTx = currTx
 
-                val speedDownKbs = (diffDown / 1024.0)
-                val totalDownMb = totalDownloadedBytes / (1024.0 * 1024.0)
-                val totalUpMb = totalUploadedBytes / (1024.0 * 1024.0)
-
-                val downStr = if (speedDownKbs > 1024) String.format("%.1f MB/s", speedDownKbs / 1024.0) else String.format("%.0f KB/s", speedDownKbs)
-                val totalStr = String.format("دانلود: %.1f MB | آپلود: %.1f MB", totalDownMb, totalUpMb)
+                val speedDownStr = formatSpeed(diffDown)
+                val totalStr = formatBytes(totalDownloadedBytes + totalUploadedBytes)
 
                 val notif = NotificationCompat.Builder(this@SovraVpnService, SovraApp.CHANNEL_ID)
+                    .setContentTitle("اتصال امن SOVRA VPN")
+                    .setContentText("$currentServerName | ↓ $speedDownStr | کل: $totalStr")
                     .setSmallIcon(R.mipmap.ic_launcher)
-                    .setContentTitle("SOVRA VPN متصل است ($downStr)")
-                    .setContentText(totalStr)
-                    .setStyle(NotificationCompat.BigTextStyle().bigText("وضعیت: فعال و رمزنگاری شده\nسرعت زنده: $downStr\nحجم کل: $totalStr"))
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .setOngoing(true)
                     .setContentIntent(pIntent)
-                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "قطع اتصال", pDisconnectIntent)
+                    .setOngoing(true)
+                    .setOnlyAlertOnce(true)
+                    .addAction(
+                        android.R.drawable.ic_menu_close_clear_cancel,
+                        "قطع اتصال",
+                        pDisconnectIntent
+                    )
                     .build()
 
                 startForeground(NOTIFICATION_ID, notif)
+                nm.notify(NOTIFICATION_ID, notif)
 
-                MainActivity.instance?.updateLiveTraffic(downStr, totalStr)
+                MainActivity.instance?.updateLiveTraffic(speedDownStr, totalStr)
 
                 delay(1000)
             }
         }
     }
 
+    private fun formatSpeed(bytesPerSec: Long): String {
+        return if (bytesPerSec < 1024) {
+            "${bytesPerSec} B/s"
+        } else if (bytesPerSec < 1024 * 1024) {
+            String.format(Locale.US, "%.1f KB/s", bytesPerSec / 1024.0)
+        } else {
+            String.format(Locale.US, "%.2f MB/s", bytesPerSec / (1024.0 * 1024.0))
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        return if (bytes < 1024 * 1024) {
+            String.format(Locale.US, "%.1f KB", bytes / 1024.0)
+        } else if (bytes < 1024 * 1024 * 1024) {
+            String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
+        } else {
+            String.format(Locale.US, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+        }
+    }
+
     override fun onDestroy() {
         stopTunnel()
+        scope.cancel()
         super.onDestroy()
     }
 }
