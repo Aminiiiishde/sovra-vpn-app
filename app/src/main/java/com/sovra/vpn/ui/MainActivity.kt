@@ -147,6 +147,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             addJavascriptInterface(WebAppInterface(), "SovraBridge")
+            addJavascriptInterface(WebAppInterface(), "AndroidBridge")
         }
 
         root.addView(webView)
