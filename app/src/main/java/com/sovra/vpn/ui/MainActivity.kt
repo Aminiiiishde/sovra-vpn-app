@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             pendingConnect = false
-            Toast.makeText(this, "مجوز دسترسی VPN رد شد", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@MainActivity, "مجوز دسترسی VPN رد شد", Toast.LENGTH_SHORT).show()
             notifyVpnDisconnected()
         }
     }
@@ -281,10 +281,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopVpn() {
-        val serviceIntent = Intent(this, SovraVpnService::class.java).apply {
-            action = SovraVpnService.ACTION_DISCONNECT
-        }
-        startService(serviceIntent)
+        try {
+            val serviceIntent = Intent(this@MainActivity, SovraVpnService::class.java).apply {
+                action = SovraVpnService.ACTION_DISCONNECT
+            }
+            startService(serviceIntent)
+        } catch (_: Exception) {}
         notifyVpnDisconnected()
     }
 
@@ -315,17 +317,14 @@ class MainActivity : AppCompatActivity() {
 
         when (currentMode) {
             "static" -> {
-                // If previously locked onto a valid server, maintain that lock
                 if (staticLockedUri.isNotEmpty() && parsedServers.any { it.link == staticLockedUri }) {
                     return@withContext staticLockedUri
                 }
 
-                // Prefer Germany, Sweden, or UK
                 val countryCandidates = parsedServers.filter { s ->
                     isCountryMatch(s, "germany") || isCountryMatch(s, "sweden") || isCountryMatch(s, "uk")
                 }.ifEmpty { parsedServers }
 
-                // Test real delay to pick one that is actively online
                 var chosen: ServerItem? = null
                 for (cand in countryCandidates) {
                     val delay = measureRealDelay(cand.link)
@@ -355,7 +354,7 @@ class MainActivity : AppCompatActivity() {
                     if (p1 > 0 && p2 > 0) {
                         val avgPing = (p1 + p2) / 2
                         val jitter = Math.abs(p2 - p1)
-                        val score = avgPing + (jitter * 3) // Penalty for jitter / packet drop
+                        val score = avgPing + (jitter * 3)
                         if (score < bestScore) {
                             bestScore = score
                             bestCandidate = cand
@@ -367,7 +366,6 @@ class MainActivity : AppCompatActivity() {
                 bestCandidate.link
             }
             else -> {
-                // "fastest" - probe candidates and select lowest delay
                 val candidates = parsedServers.take(6)
                 var bestCandidate = candidates[0]
                 var bestDelay = Long.MAX_VALUE
@@ -468,7 +466,6 @@ class MainActivity : AppCompatActivity() {
 
             val cleanTitle = if (rawRemark.isNotBlank()) rawRemark else "سرور ${index + 1}"
 
-            // Check if this node is an info/account header node
             val isInfoNode = link.contains("nothing.to.cash") || link.contains("127.0.0.1") ||
                     cleanTitle.contains("حجم") || cleanTitle.contains("انقضا")
 
@@ -544,6 +541,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun showToast(msg: String) {
+        runOnUiThread {
+            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     inner class WebAppInterface {
 
         @JavascriptInterface
@@ -591,7 +594,7 @@ class MainActivity : AppCompatActivity() {
         fun setSmartMode(mode: String) {
             triggerHaptic()
             currentMode = mode
-            lifecycleScope.launch(Dispatchers.IO) {
+            this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
                 val resolvedUri = resolveServerForCurrentMode()
                 if (resolvedUri.isNotEmpty()) {
                     selectedServerUri = resolvedUri
@@ -618,7 +621,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun pingServer(index: Int) {
             if (index in 0 until parsedServers.size) {
-                lifecycleScope.launch(Dispatchers.IO) {
+                this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
                     val s = parsedServers[index]
                     val ping = measureRealDelay(s.link)
                     s.ping = ping.toInt()
@@ -632,20 +635,21 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun pingAllServers() {
             triggerHaptic()
-            lifecycleScope.launch(Dispatchers.IO) {
+            this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
                 val semaphore = Semaphore(8)
-                val jobs = parsedServers.mapIndexed { idx, s ->
-                    launch {
-                        semaphore.withPermit {
-                            val ping = measureRealDelay(s.link)
-                            s.ping = ping.toInt()
-                            withContext(Dispatchers.Main) {
-                                webView.evaluateJavascript("if(typeof updatePing === 'function') updatePing($idx, $ping);", null)
+                coroutineScope {
+                    parsedServers.mapIndexed { idx, s ->
+                        launch {
+                            semaphore.withPermit {
+                                val ping = measureRealDelay(s.link)
+                                s.ping = ping.toInt()
+                                withContext(Dispatchers.Main) {
+                                    webView.evaluateJavascript("if(typeof updatePing === 'function') updatePing($idx, $ping);", null)
+                                }
                             }
                         }
                     }
                 }
-                jobs.joinAll()
             }
         }
 
@@ -657,7 +661,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun fetchSubscription(subInput: String) {
             triggerHaptic()
-            lifecycleScope.launch(Dispatchers.IO) {
+            this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     doFetchSubscription(subInput)
                     withContext(Dispatchers.Main) {
@@ -675,7 +679,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun uploadReceipt(base64Image: String, planTitle: String, amount: Long, orderType: String, targetUsername: String) {
             triggerHaptic()
-            lifecycleScope.launch(Dispatchers.IO) {
+            this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val url = "https://sub.aminishere.shop/api/order/submit"
                     val payload = JSONObject().apply {
@@ -708,10 +712,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    private fun showToast(msg: String) {
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 }
 
