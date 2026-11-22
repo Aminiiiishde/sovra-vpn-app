@@ -15,15 +15,13 @@ import android.util.Base64
 import android.util.Log
 import android.webkit.*
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.sovra.vpn.core.ConfigGenerator
 import com.sovra.vpn.core.SovraVpnService
 import com.sovra.vpn.core.XrayBridge
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -33,7 +31,17 @@ import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
-class MainActivity : AppCompatActivity() {
+data class ServerItem(
+    val name: String,
+    val flag: String,
+    val country: String,
+    val category: String,
+    val proto: String,
+    var ping: Int,
+    val link: String
+)
+
+class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
@@ -41,7 +49,6 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_SUB_URL = "sovra_sub_url"
         private const val KEY_STATIC_LOCKED_URI = "sovra_static_locked_uri"
         var instance: MainActivity? = null
-            private set
     }
 
     private lateinit var webView: WebView
@@ -594,7 +601,7 @@ class MainActivity : AppCompatActivity() {
         fun setSmartMode(mode: String) {
             triggerHaptic()
             currentMode = mode
-            this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
+            lifecycleScope.launch(Dispatchers.IO) {
                 val resolvedUri = resolveServerForCurrentMode()
                 if (resolvedUri.isNotEmpty()) {
                     selectedServerUri = resolvedUri
@@ -621,7 +628,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun pingServer(index: Int) {
             if (index in 0 until parsedServers.size) {
-                this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
+                lifecycleScope.launch(Dispatchers.IO) {
                     val s = parsedServers[index]
                     val ping = measureRealDelay(s.link)
                     s.ping = ping.toInt()
@@ -635,20 +642,14 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun pingAllServers() {
             triggerHaptic()
-            this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
-                val semaphore = Semaphore(8)
-                coroutineScope {
-                    parsedServers.mapIndexed { idx, s ->
-                        launch {
-                            semaphore.withPermit {
-                                val ping = measureRealDelay(s.link)
-                                s.ping = ping.toInt()
-                                withContext(Dispatchers.Main) {
-                                    webView.evaluateJavascript("if(typeof updatePing === 'function') updatePing($idx, $ping);", null)
-                                }
-                            }
-                        }
+            lifecycleScope.launch(Dispatchers.IO) {
+                parsedServers.forEachIndexed { idx, s ->
+                    val ping = measureRealDelay(s.link)
+                    s.ping = ping.toInt()
+                    withContext(Dispatchers.Main) {
+                        webView.evaluateJavascript("if(typeof updatePing === 'function') updatePing($idx, $ping);", null)
                     }
+                    delay(30)
                 }
             }
         }
@@ -661,7 +662,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun fetchSubscription(subInput: String) {
             triggerHaptic()
-            this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
+            lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     doFetchSubscription(subInput)
                     withContext(Dispatchers.Main) {
@@ -679,7 +680,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun uploadReceipt(base64Image: String, planTitle: String, amount: Long, orderType: String, targetUsername: String) {
             triggerHaptic()
-            this@MainActivity.lifecycleScope.launch(Dispatchers.IO) {
+            lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val url = "https://sub.aminishere.shop/api/order/submit"
                     val payload = JSONObject().apply {
@@ -714,13 +715,3 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
-
-data class ServerItem(
-    val name: String,
-    val flag: String,
-    val country: String,
-    val category: String,
-    val proto: String,
-    var ping: Int,
-    val link: String
-)
