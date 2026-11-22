@@ -52,7 +52,7 @@ object ConfigGenerator {
         root.put("policy", policy)
         root.put("stats", JSONObject())
 
-        // 3. Inbounds: socks (local port 10808) AND tun (xray0) matching official v2rayNG / V2Box
+        // 3. Inbounds: SOCKS (port 10808) & TUN (xray0) matching official v2rayNG / V2Box
         val inbounds = JSONArray()
 
         val socksInbound = JSONObject().apply {
@@ -95,7 +95,7 @@ object ConfigGenerator {
         inbounds.put(tunInbound)
         root.put("inbounds", inbounds)
 
-        // 4. Outbounds: proxy (1st priority), direct, block
+        // 4. Outbounds: proxy (1st priority), direct, block, and dns-out
         val outbounds = JSONArray()
 
         // 4.1 Proxy outbound (1st priority)
@@ -127,13 +127,53 @@ object ConfigGenerator {
             })
         }
         outbounds.put(blockOutbound)
+
+        // 4.4 DNS outbound (essential for intercepting port 53 DNS queries)
+        val dnsOutbound = JSONObject().apply {
+            put("tag", "dns-out")
+            put("protocol", "dns")
+        }
+        outbounds.put(dnsOutbound)
+
         root.put("outbounds", outbounds)
 
-        // 5. Routing: Direct private LAN IPs, all other traffic flows through proxy
+        // 5. Built-in DNS module (resolves queries securely through remote proxy)
+        val dns = JSONObject().apply {
+            put("tag", "dns_tag")
+            put("servers", JSONArray().apply {
+                put("https+local://1.1.1.1/dns-query")
+                put("1.1.1.1")
+                put("8.8.8.8")
+            })
+        }
+        root.put("dns", dns)
+
+        // 6. Routing rules
         val routing = JSONObject().apply {
-            put("domainStrategy", "AsIs")
+            put("domainStrategy", "IPIfNonMatch")
             val rules = JSONArray()
 
+            // Rule 1 (Top Priority): Hijack all port 53 DNS queries to internal dns-out
+            rules.put(JSONObject().apply {
+                put("type", "field")
+                put("inboundTag", JSONArray().apply {
+                    put("tun")
+                    put("socks")
+                })
+                put("port", "53")
+                put("outboundTag", "dns-out")
+            })
+
+            // Rule 2: Route all DNS engine queries (dns_tag) through the remote proxy
+            rules.put(JSONObject().apply {
+                put("type", "field")
+                put("inboundTag", JSONArray().apply {
+                    put("dns_tag")
+                })
+                put("outboundTag", "proxy")
+            })
+
+            // Rule 3: Direct local / private IP networks
             rules.put(JSONObject().apply {
                 put("type", "field")
                 put("outboundTag", "direct")
@@ -144,6 +184,14 @@ object ConfigGenerator {
                     put("127.0.0.0/8")
                 })
             })
+
+            // Rule 4: Catch-all to proxy
+            rules.put(JSONObject().apply {
+                put("type", "field")
+                put("outboundTag", "proxy")
+                put("network", "tcp,udp")
+            })
+
             put("rules", rules)
         }
         root.put("routing", routing)
@@ -221,31 +269,30 @@ object ConfigGenerator {
 
     private fun parseVmess(uri: String, cleanIp: String = ""): JSONObject {
         val raw = uri.removePrefix("vmess://")
-        val decoded = String(Base64.decode(raw, Base64.DEFAULT), Charsets.UTF_8)
-        val json = JSONObject(decoded)
+        val decoded = String(Base64.decode(raw, Base64.DEFAULT or Base64.NO_WRAP))
+        val vmessJson = JSONObject(decoded)
 
-        val rawAddress = json.optString("add", "")
-        val port = json.optInt("port", 443)
-        val uuid = json.optString("id", "")
-        val aid = json.optInt("aid", 0)
-        val transport = json.optString("net", "tcp")
-        val security = json.optString("tls", "none")
-        val path = json.optString("path", "/")
-        val host = json.optString("host", "")
-        val sni = json.optString("sni", host)
-        val alpn = json.optString("alpn", "")
-        val fp = json.optString("fp", "chrome")
-        val type = json.optString("type", "none")
-
+        val rawAddress = vmessJson.getString("add")
         val serverAddress = if (cleanIp.isNotEmpty()) cleanIp else rawAddress
+        val port = vmessJson.getInt("port")
+        val uuid = vmessJson.getString("id")
+        val aid = vmessJson.optInt("aid", 0)
+        val transport = vmessJson.optString("net", "tcp")
+        val security = vmessJson.optString("tls", "none")
+        val path = vmessJson.optString("path", "/")
+        val host = vmessJson.optString("host", "")
+        val sni = vmessJson.optString("sni", host)
+        val alpn = vmessJson.optString("alpn", "")
+        val fp = vmessJson.optString("fp", "chrome")
 
         return buildOutboundJson(
             protocol = "vmess",
             serverAddress = serverAddress,
             serverPort = port,
             uuid = uuid,
+            alterId = aid,
             transport = transport,
-            security = if (security == "tls") "tls" else "none",
+            security = security,
             path = path,
             host = host,
             sni = sni,
@@ -299,40 +346,34 @@ object ConfigGenerator {
 
     private fun parseShadowsocks(uri: String, cleanIp: String = ""): JSONObject {
         val raw = uri.removePrefix("ss://")
-        val mainPart = raw.split("#")[0].split("?")[0]
+        val mainPart = raw.split("#")[0]
 
-        var method = "chacha20-ietf-poly1305"
-        var password = ""
-        var host = ""
-        var port = 8388
+        val decodedPart: String
+        val serverPart: String
 
-        try {
-            if (mainPart.contains("@")) {
-                val atParts = mainPart.split("@")
-                val userInfo = try {
-                    String(Base64.decode(atParts[0], Base64.DEFAULT or Base64.NO_WRAP))
-                } catch (_: Exception) {
-                    atParts[0]
-                }
-                val up = userInfo.split(":")
-                method = up[0]
-                password = if (up.size > 1) up[1] else ""
-                val hp = atParts[1].split(":")
-                host = hp[0]
-                port = hp[1].toInt()
-            } else {
-                val decoded = String(Base64.decode(mainPart, Base64.DEFAULT or Base64.NO_WRAP))
-                val atParts = decoded.split("@")
-                val up = atParts[0].split(":")
-                method = up[0]
-                password = if (up.size > 1) up[1] else ""
-                val hp = atParts[1].split(":")
-                host = hp[0]
-                port = hp[1].toInt()
+        if (mainPart.contains("@")) {
+            val atSplit = mainPart.split("@")
+            decodedPart = try {
+                String(Base64.decode(atSplit[0], Base64.DEFAULT or Base64.NO_WRAP))
+            } catch (_: Exception) {
+                atSplit[0]
             }
-        } catch (_: Exception) {}
+            serverPart = atSplit[1]
+        } else {
+            val fullDecoded = String(Base64.decode(mainPart, Base64.DEFAULT or Base64.NO_WRAP))
+            val atSplit = fullDecoded.split("@")
+            decodedPart = atSplit[0]
+            serverPart = atSplit[1]
+        }
 
-        val serverAddress = if (cleanIp.isNotEmpty()) cleanIp else host
+        val methodPassword = decodedPart.split(":")
+        val method = methodPassword[0]
+        val password = methodPassword[1]
+
+        val hostPort = serverPart.split(":")
+        val rawAddress = hostPort[0]
+        val port = hostPort[1].toInt()
+        val serverAddress = if (cleanIp.isNotEmpty()) cleanIp else rawAddress
 
         val outbound = JSONObject()
         outbound.put("tag", "proxy")
@@ -344,14 +385,11 @@ object ConfigGenerator {
                 put("port", port)
                 put("method", method)
                 put("password", password)
-                put("level", 8)
+                put("uot", true)
             })
             put("servers", servers)
         }
         outbound.put("settings", settings)
-        outbound.put("streamSettings", JSONObject().apply {
-            put("network", "tcp")
-        })
         return outbound
     }
 
@@ -360,6 +398,7 @@ object ConfigGenerator {
         serverAddress: String,
         serverPort: Int,
         uuid: String,
+        alterId: Int = 0,
         transport: String = "tcp",
         security: String = "none",
         path: String = "/",
@@ -386,113 +425,95 @@ object ConfigGenerator {
                 put("address", serverAddress)
                 put("port", serverPort)
                 put("password", uuid)
-                put("level", 8)
             })
             settings.put("servers", servers)
         } else {
             val vnext = JSONArray()
-            val serverObj = JSONObject().apply {
+            val server = JSONObject().apply {
                 put("address", serverAddress)
                 put("port", serverPort)
-                val users = JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("id", uuid)
-                        put("encryption", encryption.ifEmpty { "none" })
-                        if (flow.isNotEmpty()) {
-                            put("flow", flow)
-                        }
-                        if (protocol == "vmess") {
-                            put("alterId", 0)
-                            put("security", "auto")
-                        }
-                        put("level", 8)
-                    })
+                val users = JSONArray()
+                val user = JSONObject().apply {
+                    put("id", uuid)
+                    if (protocol == "vless") {
+                        put("encryption", encryption)
+                        if (flow.isNotBlank()) put("flow", flow)
+                    } else if (protocol == "vmess") {
+                        put("alterId", alterId)
+                        put("security", "auto")
+                    }
                 }
+                users.put(user)
                 put("users", users)
             }
-            vnext.put(serverObj)
+            vnext.put(server)
             settings.put("vnext", vnext)
         }
         outbound.put("settings", settings)
 
         // Stream Settings
-        val streamSettings = JSONObject()
-        streamSettings.put("network", transport)
-        if (security.isNotEmpty() && security != "none") {
-            streamSettings.put("security", security)
-        }
+        val stream = JSONObject()
+        stream.put("network", transport)
+        stream.put("security", security)
 
-        // Transport Settings
-        when (transport) {
-            "ws" -> {
-                streamSettings.put("wsSettings", JSONObject().apply {
-                    put("path", path.ifEmpty { "/" })
-                    if (host.isNotEmpty()) {
-                        put("host", host)
-                        val headers = JSONObject()
-                        headers.put("Host", host)
-                        put("headers", headers)
-                    }
-                })
+        // Security configuration
+        if (security == "reality") {
+            val realitySettings = JSONObject().apply {
+                put("show", false)
+                if (fingerprint.isNotBlank()) put("fingerprint", fingerprint)
+                if (sni.isNotBlank()) put("serverName", sni)
+                if (publicKey.isNotBlank()) put("publicKey", publicKey)
+                if (shortId.isNotBlank()) put("shortId", shortId)
+                if (spiderX.isNotBlank()) put("spiderX", spiderX)
             }
-            "httpupgrade" -> {
-                streamSettings.put("httpupgradeSettings", JSONObject().apply {
-                    put("path", path.ifEmpty { "/" })
-                    if (host.isNotEmpty()) {
-                        put("host", host)
-                    }
-                })
-            }
-            "xhttp" -> {
-                streamSettings.put("xhttpSettings", JSONObject().apply {
-                    put("path", path.ifEmpty { "/" })
-                    if (host.isNotEmpty()) {
-                        put("host", host)
-                    }
-                    put("mode", mode.ifEmpty { "auto" })
-                })
-            }
-            "tcp" -> {
-                streamSettings.put("tcpSettings", JSONObject().apply {
-                    put("header", JSONObject().apply {
-                        put("type", "none")
-                    })
-                })
-            }
-            "grpc" -> {
-                streamSettings.put("grpcSettings", JSONObject().apply {
-                    put("serviceName", serviceName.ifEmpty { path })
-                    put("multiMode", mode == "multi")
-                })
-            }
-        }
-
-        // Security Settings - STRICTLY NO "allowInsecure" for Xray v26+!
-        if (security == "tls") {
-            streamSettings.put("tlsSettings", JSONObject().apply {
-                put("serverName", sni.ifEmpty { host.ifEmpty { serverAddress } })
-                put("fingerprint", fingerprint.ifEmpty { "chrome" })
-                if (alpn.isNotEmpty()) {
+            stream.put("realitySettings", realitySettings)
+        } else if (security == "tls") {
+            val tlsSettings = JSONObject().apply {
+                put("allowInsecure", false)
+                if (sni.isNotBlank()) put("serverName", sni)
+                if (fingerprint.isNotBlank()) put("fingerprint", fingerprint)
+                if (alpn.isNotBlank()) {
                     val alpnArray = JSONArray()
-                    alpn.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach {
-                        alpnArray.put(it)
-                    }
+                    alpn.split(",").forEach { alpnArray.put(it.trim()) }
                     put("alpn", alpnArray)
                 }
-            })
-        } else if (security == "reality") {
-            streamSettings.put("realitySettings", JSONObject().apply {
-                put("serverName", sni.ifEmpty { serverAddress })
-                put("fingerprint", fingerprint.ifEmpty { "chrome" })
-                put("publicKey", publicKey)
-                put("shortId", shortId)
-                if (spiderX.isNotEmpty()) {
-                    put("spiderX", spiderX)
-                }
-            })
+            }
+            stream.put("tlsSettings", tlsSettings)
         }
 
-        outbound.put("streamSettings", streamSettings)
+        // Transport configuration
+        when (transport) {
+            "ws" -> {
+                val wsSettings = JSONObject().apply {
+                    put("path", if (path.startsWith("/")) path else "/$path")
+                    val headers = JSONObject()
+                    if (host.isNotBlank()) headers.put("Host", host)
+                    put("headers", headers)
+                }
+                stream.put("wsSettings", wsSettings)
+            }
+            "grpc" -> {
+                val grpcSettings = JSONObject().apply {
+                    val actualService = if (serviceName.isNotBlank()) serviceName else path
+                    put("serviceName", actualService)
+                    put("multiMode", mode == "multi")
+                }
+                stream.put("grpcSettings", grpcSettings)
+            }
+            "http", "h2" -> {
+                val httpSettings = JSONObject().apply {
+                    put("path", if (path.startsWith("/")) path else "/$path")
+                    if (host.isNotBlank()) {
+                        val hostArray = JSONArray()
+                        host.split(",").forEach { hostArray.put(it.trim()) }
+                        put("host", hostArray)
+                    }
+                }
+                stream.put("httpSettings", httpSettings)
+            }
+        }
+
+        outbound.put("streamSettings", stream)
         return outbound
     }
 }
