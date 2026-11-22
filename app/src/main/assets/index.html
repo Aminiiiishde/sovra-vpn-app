@@ -1318,12 +1318,12 @@ input:checked + .switch-slider:before {
     <div class="auth-box">
       <div class="auth-logo-badge"><span>S</span></div>
       <h2>ورود به SOVRA VPN</h2>
-      <p>لطفاً لینک یا شناسه ساب‌اسکریپشن خود را وارد کنید</p>
+      <p>جهت بارگذاری سرورها و استفاده از اپلیکیشن وارد شوید</p>
 
       <!-- SUB FORM ONLY -->
       <div id="auth-sub-sec">
         <div class="auth-form-group">
-          <label for="sub-input">لینک ساب، توکن یا کانفیگ:</label>
+          <label for="sub-input">لینک یا شناسه ساب‌اسکریپشن (Subscription):</label>
           <div style="display:flex;gap:8px;align-items:center;">
             <input type="text" id="sub-input" class="auth-input" placeholder="مثال: 5dr48a6hn8dwwbs7 یا https://..." style="flex:1;">
             <button type="button" onclick="pasteSubFromClipboard()" style="background:rgba(0,240,255,0.15);border:1px solid #00F0FF;color:#00F0FF;border-radius:10px;padding:12px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
@@ -2111,15 +2111,19 @@ function showToast(msg) {
 }
 
 /* ═══ ANDROID BRIDGE HELPER ═══ */
-function callBridge(funcName, arg1, arg2) {
+function callBridge(funcName, arg1, arg2, arg3, arg4, arg5) {
   try {
-    if (window.AndroidBridge && typeof window.AndroidBridge[funcName] === 'function') {
-      if (arg2 !== undefined) return window.AndroidBridge[funcName](arg1, arg2);
-      if (arg1 !== undefined) return window.AndroidBridge[funcName](arg1);
-      return window.AndroidBridge[funcName]();
+    var b = window.SovraBridge || window.AndroidBridge;
+    if (b && typeof b[funcName] === 'function') {
+      if (arg5 !== undefined) return b[funcName](arg1, arg2, arg3, arg4, arg5);
+      if (arg4 !== undefined) return b[funcName](arg1, arg2, arg3, arg4);
+      if (arg3 !== undefined) return b[funcName](arg1, arg2, arg3);
+      if (arg2 !== undefined) return b[funcName](arg1, arg2);
+      if (arg1 !== undefined) return b[funcName](arg1);
+      return b[funcName]();
     }
   } catch(e) {
-    console.warn("AndroidBridge call error:", e);
+    console.warn("Bridge call error:", funcName, e);
   }
   return false;
 }
@@ -2143,15 +2147,16 @@ function pasteSubFromClipboard() {
 }
 
 function loginWithSub() {
-  var val = document.getElementById('sub-input').value.trim();
+  var input = document.getElementById('sub-input');
+  var val = input ? input.value.trim() : '';
   if (!val) {
-    alert('لطفاً شناسه سابسکریپشن یا لینک خود را وارد کنید.');
+    showToast('لطفاً لینک یا شناسه سابسکریپشن را وارد کنید');
     return;
   }
   var btn = document.getElementById('btn-sub-login');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'در حال بارگذاری سرورها...';
+    btn.textContent = 'در حال دریافت سرورها...';
   }
 
   currentSubId = val;
@@ -2165,7 +2170,9 @@ function loginWithSub() {
 
 function enterApp(identity) {
   var gate = document.getElementById('auth-gate');
-  if (gate) gate.style.display = 'none';
+  if (gate) {
+    gate.style.display = 'none';
+  }
   var elAccUser = document.getElementById('acc-username');
   if (elAccUser) elAccUser.textContent = 'کاربر: ' + identity;
   var elAccSub = document.getElementById('acc-sub-id');
@@ -2735,16 +2742,6 @@ window.onSubscriptionLoaded = function(jsonStr, vipCount, directCount, accountNa
   if (btn) {
     btn.disabled = false;
     btn.textContent = 'ورود و بارگذاری سرورها';
-  }
-};
-      });
-      renderServers(SERVERS);
-      selectServer(0);
-      var subBadge = document.getElementById('home-sub-title');
-      if (subBadge) subBadge.textContent = 'اشتراک SOVRA VIP (' + list.length + ' سرور فعال)';
-    }
-  } catch(e) {
-    console.warn('onSubscriptionLoaded error:', e);
   }
 };
 
